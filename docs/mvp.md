@@ -11,7 +11,7 @@ A working **end-to-end flow**: start a session → capture audio → see a live 
 The planning docs originally disagreed on two forks; both are settled for the MVP:
 
 - **Product shape → Dashboard + Labels.** Flat session list (Apple Mail split-pane), sessions tagged with labels, actions scoped to each session. *Not* the sidebar + projects + global-actions model from [vision.md](vision.md) — that's a v1 target, sequenced in [roadmap.md](roadmap.md).
-- **Frontend → Svelte + TypeScript.** (`design/sidebar-prototype.jsx` is a React prototype of the off-path sidebar model — reference only. The canonical prototype is `design/dashboard-prototype.html`.)
+- **Frontend → Svelte + TypeScript.** (`design/sidebar-prototype.jsx` is a React prototype of the off-path sidebar model — reference only. The canonical prototype is `design/prototype.html`.)
 
 Full stack + rationale: [architecture.md](architecture.md).
 
@@ -30,7 +30,7 @@ Full stack + rationale: [architecture.md](architecture.md).
 
 ## UI — Six Screens
 
-Two modes: **dashboard** (browsing) and **session** (full-screen takeover). Full spec with mockups: **[design/ui-spec.md](../design/ui-spec.md)**; interactive preview: open `design/dashboard-prototype.html` in a browser.
+Two modes: **dashboard** (browsing) and **session** (full-screen takeover). Full spec with mockups: **[design/ui-spec.md](../design/ui-spec.md)**; interactive preview: open `design/prototype.html` in a browser.
 
 1. **Setup / Onboarding** (once) — API key → audio device → Whisper model → done
 2. **Dashboard** — mail-inbox split: session list (left) + session detail (right); top bar with [+ New Session] + settings

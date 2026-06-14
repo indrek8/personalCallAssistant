@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Call Assistant — Warm Ink Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============================ TOKENS ============================ */
+:root{
+  --bg-0:#0E0D0B;     /* deepest warm ink (page) */
+  --bg-1:#141210;     /* window base */
+  --bg-2:#1A1714;     /* surface */
+  --bg-3:#211D18;     /* elevated */
+  --bg-hover:#272219;
+  --bg-sel:#2A2114;   /* selected (warm gold-tinted) */
+  --line:#2F2A22;     /* hairline */
+  --line-soft:#241F19;
+  --ink:#F4EFE6;      /* primary, warm paper */
+  --ink-2:#B7AE9E;    /* secondary */
+  --ink-3:#827969;    /* tertiary */
+  --ink-4:#574F44;    /* faint */
+  --gold:#E7B24C;     /* brand / signature */
+  --gold-2:#F4C766;
+  --gold-soft:rgba(231,178,76,.13);
+  --gold-line:rgba(231,178,76,.32);
+  --rec:#FF4D3E;      /* live recording */
+  --rec-soft:rgba(255,77,62,.14);
+  --fact:#F0A640;     /* AI: fact-check */
+  --commit:#54C5DE;   /* AI: commitment */
+  --suggest:#8AC479;  /* AI: suggestion */
+  --ask:#B295E8;      /* AI: unanswered Q */
+  --done:#8AC479;
+  --pend:#E7B24C;
+  --late:#FF6B5C;
+  --f-disp:'Fraunces',Georgia,serif;
+  --f-ui:'Hanken Grotesk',-apple-system,sans-serif;
+  --f-mono:'JetBrains Mono','SF Mono',monospace;
+  --r-s:7px; --r-m:11px; --r-l:16px;
+  --ease:cubic-bezier(.22,.61,.36,1);
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:14px}
+body{
+  font-family:var(--f-ui);
+  background:
+    radial-gradient(1200px 700px at 70% -10%, rgba(231,178,76,.06), transparent 60%),
+    radial-gradient(900px 600px at 10% 110%, rgba(255,77,62,.045), transparent 55%),
+    var(--bg-0);
+  color:var(--ink);
+  min-height:100vh;
+  display:flex; align-items:center; justify-content:center;
+  padding:34px 20px 88px;
+  -webkit-font-smoothing:antialiased;
+  letter-spacing:-.006em;
+}
+
+/* film grain overlay */
+body::after{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:9999; opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ============================ WINDOW ============================ */
+.win{
+  position:relative; width:1240px; max-width:100%; height:806px;
+  background:var(--bg-1);
+  border:1px solid #34302A; border-radius:15px; overflow:hidden;
+  box-shadow:0 50px 120px -30px rgba(0,0,0,.85),0 0 0 .5px rgba(255,255,255,.05),inset 0 1px 0 rgba(255,255,255,.04);
+  display:flex; flex-direction:column;
+}
+.titlebar{
+  height:42px; flex:none; display:flex; align-items:center; gap:8px;
+  padding:0 16px; border-bottom:1px solid var(--line-soft);
+  background:linear-gradient(180deg,rgba(255,255,255,.022),transparent);
+  -webkit-app-region:drag; position:relative; z-index:5;
+}
+.lights{display:flex; gap:8px}
+.light{width:12px;height:12px;border-radius:50%}
+.l-c{background:#FF5F57} .l-m{background:#FEBC2E} .l-x{background:#28C840}
+.tb-title{position:absolute; left:0; right:0; text-align:center; font-size:12px; color:var(--ink-3); letter-spacing:.02em; pointer-events:none}
+.tb-title b{color:var(--ink-2); font-weight:600}
+
+/* brand mark */
+.mark{width:23px;height:23px;flex:none;border-radius:7px;background:linear-gradient(150deg,#2A2418,#1A1610);border:1px solid var(--gold-line);display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px -4px var(--gold-soft)}
+.mark span{display:flex;align-items:flex-end;gap:1.5px;height:11px}
+.mark span i{width:2px;background:var(--gold);border-radius:1px;display:block}
+.mark span i:nth-child(1){height:4px} .mark span i:nth-child(2){height:9px}
+.mark span i:nth-child(3){height:6px} .mark span i:nth-child(4){height:11px} .mark span i:nth-child(5){height:5px}
+
+/* ============================ SCREENS ============================ */
+.stage{flex:1; position:relative; overflow:hidden}
+.screen{position:absolute; inset:0; display:none; flex-direction:column; overflow:hidden}
+.screen.active{display:flex}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.screen.active .rise{animation:rise .55s var(--ease) both}
+.screen.active .rise:nth-child(1){animation-delay:.02s}
+.screen.active .rise:nth-child(2){animation-delay:.07s}
+.screen.active .rise:nth-child(3){animation-delay:.12s}
+.screen.active .rise:nth-child(4){animation-delay:.17s}
+
+/* generic helpers */
+.mono{font-family:var(--f-mono)}
+.eyebrow{font-family:var(--f-mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3)}
+.divider{height:1px;background:var(--line-soft);border:0}
+.btn{font-family:var(--f-ui);font-weight:600;font-size:13px;border:1px solid var(--line);background:var(--bg-3);color:var(--ink);padding:8px 15px;border-radius:var(--r-s);cursor:pointer;transition:.18s var(--ease);display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn:hover{background:var(--bg-hover);border-color:#3C362C}
+.btn-gold{background:linear-gradient(180deg,var(--gold-2),var(--gold));color:#27200C;border-color:transparent;box-shadow:0 4px 16px -6px rgba(231,178,76,.6),inset 0 1px 0 rgba(255,255,255,.4)}
+.btn-gold:hover{filter:brightness(1.06);background:linear-gradient(180deg,var(--gold-2),var(--gold))}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--ink-2)}
+.btn-ghost:hover{background:var(--bg-2);color:var(--ink)}
+.icon{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.chip{font-size:11px;font-weight:600;padding:2.5px 9px;border-radius:20px;border:1px solid;letter-spacing:.01em;white-space:nowrap}
+.scroll{overflow-y:auto;scrollbar-width:thin;scrollbar-color:#322C24 transparent}
+.scroll::-webkit-scrollbar{width:9px}
+.scroll::-webkit-scrollbar-thumb{background:#2C271F;border-radius:9px;border:3px solid transparent;background-clip:padding-box}
+.scroll::-webkit-scrollbar-thumb:hover{background:#3a3329;background-clip:padding-box}
+
+/* ============================ TOP BAR (dashboard) ============================ */
+.topbar{flex:none;height:60px;display:flex;align-items:center;gap:14px;padding:0 18px;border-bottom:1px solid var(--line-soft)}
+.brand{display:flex;align-items:center;gap:10px}
+.brand h1{font-family:var(--f-disp);font-weight:600;font-size:18px;letter-spacing:-.01em}
+.search{flex:1;max-width:340px;margin-left:6px;position:relative}
+.search input{width:100%;background:var(--bg-2);border:1px solid var(--line);border-radius:9px;padding:8px 12px 8px 34px;color:var(--ink);font-family:var(--f-ui);font-size:13px;outline:none;transition:.18s}
+.search input::placeholder{color:var(--ink-4)}
+.search input:focus{border-color:var(--gold-line);background:var(--bg-1);box-shadow:0 0 0 3px var(--gold-soft)}
+.search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--ink-4)}
+.spacer{flex:1}
+.gear{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;color:var(--ink-3);cursor:pointer;transition:.18s;border:1px solid transparent}
+.gear:hover{background:var(--bg-2);color:var(--ink);border-color:var(--line)}
+
+/* ============================ DASHBOARD SPLIT ============================ */
+.split{flex:1;display:flex;overflow:hidden}
+.list-pane{width:392px;flex:none;border-right:1px solid var(--line-soft);display:flex;flex-direction:column}
+.list-head{flex:none;display:flex;align-items:center;justify-content:space-between;padding:16px 18px 10px}
+.seg{display:flex;gap:2px;background:var(--bg-2);border:1px solid var(--line);border-radius:8px;padding:3px}
+.seg button{font-family:var(--f-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);background:transparent;border:0;padding:4px 9px;border-radius:5px;cursor:pointer;transition:.15s}
+.seg button.on{background:var(--bg-3);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.3)}
+.list{flex:1;padding:4px 10px 14px}
+.s-row{padding:13px 14px;border-radius:11px;cursor:pointer;position:relative;transition:.16s var(--ease);border:1px solid transparent}
+.s-row:hover{background:var(--bg-2)}
+.s-row.sel{background:var(--bg-sel);border-color:var(--gold-line)}
+.s-row.sel::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:3px;background:var(--gold);box-shadow:0 0 12px var(--gold)}
+.s-row .top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:7px}
+.s-row .name{font-weight:600;font-size:14px;letter-spacing:-.01em}
+.s-row .date{font-family:var(--f-mono);font-size:10.5px;color:var(--ink-3);flex:none}
+.s-row .meta{display:flex;align-items:center;gap:8px}
+.labels{display:flex;gap:5px}
+.lbl{font-size:10px;font-weight:600;padding:1.5px 7px;border-radius:5px;letter-spacing:.01em}
+.lbl-kgl{background:rgba(231,178,76,.13);color:var(--gold);box-shadow:inset 0 0 0 1px rgba(231,178,76,.2)}
+.lbl-kif{background:rgba(84,197,222,.12);color:var(--commit);box-shadow:inset 0 0 0 1px rgba(84,197,222,.2)}
+.lbl-int{background:rgba(178,149,232,.12);color:var(--ask);box-shadow:inset 0 0 0 1px rgba(178,149,232,.2)}
+.lbl-dev{background:rgba(138,196,121,.12);color:var(--suggest);box-shadow:inset 0 0 0 1px rgba(138,196,121,.2)}
+.s-row .right{margin-left:auto;display:flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:10.5px;color:var(--ink-3)}
+.dot-late{width:6px;height:6px;border-radius:50%;background:var(--late);box-shadow:0 0 8px var(--late)}
+.dur{font-family:var(--f-mono);font-size:10.5px;color:var(--ink-4)}
+
+/* detail pane */
+.detail{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.detail .scroll{padding:26px 32px 40px}
+.d-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:6px}
+.d-title{font-family:var(--f-disp);font-weight:600;font-size:30px;letter-spacing:-.02em;line-height:1.05}
+.d-meta{display:flex;gap:14px;margin-top:11px;font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3)}
+.d-meta span{display:flex;align-items:center;gap:6px}
+.d-meta b{color:var(--ink-2);font-weight:500}
+.sec{margin-top:30px}
+.sec-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
+.card{background:var(--bg-2);border:1px solid var(--line-soft);border-radius:var(--r-m);padding:17px 18px}
+.summary{font-size:14px;line-height:1.68;color:var(--ink-2)}
+.summary b{color:var(--ink);font-weight:600}
+/* actions */
+.act{display:flex;align-items:center;gap:13px;padding:13px 15px;border-radius:var(--r-m);border:1px solid var(--line-soft);background:var(--bg-2);margin-bottom:9px;transition:.16s}
+.act:hover{border-color:var(--line);background:var(--bg-3)}
+.st{width:9px;height:9px;border-radius:50%;flex:none}
+.st-done{background:var(--done);box-shadow:0 0 9px rgba(138,196,121,.5)}
+.st-pend{background:var(--pend);box-shadow:0 0 9px rgba(231,178,76,.4)}
+.st-late{background:var(--late);box-shadow:0 0 9px rgba(255,107,92,.5)}
+.act .body{flex:1;min-width:0}
+.act .t{font-size:13.5px;font-weight:500;margin-bottom:3px}
+.act .sub{font-family:var(--f-mono);font-size:10.5px;color:var(--ink-3)}
+.act .tag{font-family:var(--f-mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;padding:3px 8px;border-radius:5px;font-weight:600;flex:none}
+.tag-done{color:var(--done);background:rgba(138,196,121,.1)}
+.tag-pend{color:var(--pend);background:rgba(231,178,76,.1)}
+.tag-late{color:var(--late);background:rgba(255,107,92,.12)}
+.tline{display:flex;gap:14px;padding:9px 0}
+.tline .ts{font-family:var(--f-mono);font-size:10.5px;color:var(--ink-4);width:58px;flex:none;padding-top:2px}
+.tline .tx{font-size:13px;line-height:1.6;color:var(--ink-2)}
+.tline .sp{font-family:var(--f-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:3px}
+
+/* ============================ LIVE SESSION ============================ */
+.live{background:radial-gradient(900px 380px at 50% -120px,var(--rec-soft),transparent 70%),var(--bg-1)}
+.live-bar{flex:none;height:58px;display:flex;align-items:center;gap:14px;padding:0 18px;border-bottom:1px solid var(--line-soft);position:relative}
+.live-bar::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,var(--rec-soft),transparent)}
+.rec{display:flex;align-items:center;gap:9px;font-family:var(--f-mono);font-size:10px;letter-spacing:.18em;color:var(--rec);font-weight:600}
+.rec .d{width:9px;height:9px;border-radius:50%;background:var(--rec);animation:pulse 1.7s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,77,62,.55);opacity:1}50%{box-shadow:0 0 0 7px rgba(255,77,62,0);opacity:.6}}
+.live-title{font-weight:600;font-size:14px}
+.timer{font-family:var(--f-mono);font-size:15px;color:var(--ink);letter-spacing:.03em;font-weight:500}
+.dev{display:flex;align-items:center;gap:7px;font-family:var(--f-mono);font-size:11px;color:var(--ink-3);background:var(--bg-2);border:1px solid var(--line);border-radius:7px;padding:6px 10px;cursor:pointer;transition:.15s}
+.dev:hover{border-color:#3C362C;color:var(--ink-2)}
+.dev b{color:var(--ink-2);font-weight:500}
+.dev svg{color:var(--ink-4)}
+.cost{font-family:var(--f-mono);font-size:11px;color:var(--ink-3)}
+.cost b{color:var(--gold);font-weight:600}
+.live-body{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.tr-area{flex:1;overflow-y:auto;padding:24px 30px}
+.tr{display:flex;gap:18px;margin-bottom:21px;max-width:880px}
+.tr .ts{font-family:var(--f-mono);font-size:10.5px;color:var(--ink-4);width:62px;flex:none;padding-top:3px}
+.tr .who{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;margin-bottom:5px}
+.tr .said{font-size:15px;line-height:1.62;color:var(--ink)}
+.who-you{color:var(--gold)} .who-sar{color:var(--commit)} .who-ahm{color:var(--ask)}
+.tr.muted .said{color:var(--ink-2)}
+.listening{display:flex;align-items:center;gap:13px;padding:4px 0 8px 80px;opacity:.85}
+.eq{display:flex;align-items:flex-end;gap:3px;height:18px}
+.eq i{width:3px;background:var(--rec);border-radius:2px;animation:eq 1s infinite ease-in-out}
+.eq i:nth-child(1){animation-delay:0s;height:6px} .eq i:nth-child(2){animation-delay:.15s;height:14px}
+.eq i:nth-child(3){animation-delay:.3s;height:9px} .eq i:nth-child(4){animation-delay:.45s;height:17px}
+.eq i:nth-child(5){animation-delay:.6s;height:7px} .eq i:nth-child(6){animation-delay:.75s;height:12px}
+@keyframes eq{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
+.listening span{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+
+/* AI panel */
+.ai{flex:none;height:316px;border-top:1px solid var(--line);background:linear-gradient(180deg,var(--bg-2),var(--bg-1));display:flex;flex-direction:column}
+.ai-head{flex:none;display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line-soft)}
+.ai-head .lab{font-family:var(--f-mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3)}
+.toggles{display:flex;gap:6px;margin-left:auto}
+.tg{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:var(--bg-2);color:var(--ink-4);font-family:var(--f-mono);font-weight:600;font-size:12px;cursor:pointer;transition:.18s var(--ease);display:flex;align-items:center;justify-content:center}
+.tg:hover{color:var(--ink-2);border-color:#3C362C}
+.tg.on[data-k="F"]{background:rgba(240,166,64,.16);color:var(--fact);border-color:rgba(240,166,64,.4);box-shadow:0 0 14px -3px rgba(240,166,64,.5)}
+.tg.on[data-k="C"]{background:rgba(84,197,222,.16);color:var(--commit);border-color:rgba(84,197,222,.4);box-shadow:0 0 14px -3px rgba(84,197,222,.5)}
+.tg.on[data-k="S"]{background:rgba(138,196,121,.16);color:var(--suggest);border-color:rgba(138,196,121,.4);box-shadow:0 0 14px -3px rgba(138,196,121,.5)}
+.tg.on[data-k="Q"]{background:rgba(178,149,232,.16);color:var(--ask);border-color:rgba(178,149,232,.4);box-shadow:0 0 14px -3px rgba(178,149,232,.5)}
+.findings{flex:1;overflow-y:auto;padding:14px 18px;display:flex;flex-direction:column;gap:11px}
+.find{border:1px solid var(--line-soft);border-left-width:3px;border-radius:10px;background:var(--bg-2);padding:12px 14px;position:relative}
+.find.f-fact{border-left-color:var(--fact)} .find.f-commit{border-left-color:var(--commit)} .find.f-ask{border-left-color:var(--ask)}
+.find .fh{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+.find .ft{font-family:var(--f-mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:600}
+.f-fact .ft{color:var(--fact)} .f-commit .ft{color:var(--commit)} .f-ask .ft{color:var(--ask)}
+.find .fts{font-family:var(--f-mono);font-size:10px;color:var(--ink-4);margin-left:auto}
+.find .fc{font-size:13px;line-height:1.55;color:var(--ink-2)}
+.find .fc b{color:var(--ink);font-weight:600}
+.find .save{position:absolute;right:12px;bottom:12px;font-family:var(--f-mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--commit);background:rgba(84,197,222,.1);border:1px solid rgba(84,197,222,.28);border-radius:6px;padding:4px 9px;cursor:pointer;font-weight:600;transition:.15s}
+.find .save:hover{background:rgba(84,197,222,.2)}
+.ask-bar{flex:none;padding:12px 16px;border-top:1px solid var(--line-soft);display:flex;gap:10px;align-items:center;background:var(--bg-1)}
+.ask-bar .ic{width:30px;height:30px;border-radius:8px;background:var(--gold-soft);border:1px solid var(--gold-line);display:flex;align-items:center;justify-content:center;color:var(--gold);flex:none}
+.ask-bar input{flex:1;background:var(--bg-2);border:1px solid var(--line);border-radius:9px;padding:10px 14px;color:var(--ink);font-family:var(--f-ui);font-size:13px;outline:none;transition:.18s}
+.ask-bar input::placeholder{color:var(--ink-4)}
+.ask-bar input:focus{border-color:var(--gold-line);box-shadow:0 0 0 3px var(--gold-soft)}
+.ctrl{display:flex;gap:8px}
+.btn-rec{background:var(--rec-soft);border:1px solid rgba(255,77,62,.4);color:#FF8278}
+.btn-rec:hover{background:rgba(255,77,62,.2)}
+
+/* ============================ FORMS (new session / settings / onboarding) ============================ */
+.formwrap{flex:1;overflow-y:auto}
+.form{max-width:680px;margin:0 auto;padding:48px 40px 60px}
+.form-eyebrow{margin-bottom:10px}
+.form h2{font-family:var(--f-disp);font-weight:600;font-size:38px;letter-spacing:-.025em;margin-bottom:34px;line-height:1}
+.field{margin-bottom:24px}
+.field>label{display:block;font-family:var(--f-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-bottom:9px}
+.inp{width:100%;background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;color:var(--ink);font-family:var(--f-ui);font-size:14px;outline:none;transition:.18s}
+.inp::placeholder{color:var(--ink-4)}
+.inp:focus{border-color:var(--gold-line);background:var(--bg-1);box-shadow:0 0 0 3px var(--gold-soft)}
+textarea.inp{resize:none;line-height:1.6;min-height:120px}
+.hint{font-size:12px;color:var(--ink-4);margin-top:8px;line-height:1.5}
+.chips-in{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
+.chips-in .lbl{padding:4px 10px;font-size:12px;display:flex;align-items:center;gap:6px}
+.chips-in .add{font-family:var(--f-mono);font-size:11px;color:var(--ink-4);background:none;border:1px dashed var(--line);border-radius:6px;padding:4px 9px;cursor:pointer}
+.feat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.feat{border:1px solid var(--line);background:var(--bg-2);border-radius:12px;padding:14px 10px;text-align:center;cursor:pointer;transition:.18s var(--ease)}
+.feat .k{font-family:var(--f-disp);font-size:22px;font-weight:600;line-height:1}
+.feat .n{font-family:var(--f-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:7px}
+.feat.on[data-k="F"]{border-color:rgba(240,166,64,.5);background:rgba(240,166,64,.08)} .feat.on[data-k="F"] .k{color:var(--fact)}
+.feat.on[data-k="C"]{border-color:rgba(84,197,222,.5);background:rgba(84,197,222,.08)} .feat.on[data-k="C"] .k{color:var(--commit)}
+.feat.on[data-k="S"]{border-color:rgba(138,196,121,.5);background:rgba(138,196,121,.08)} .feat.on[data-k="S"] .k{color:var(--suggest)}
+.feat.on[data-k="Q"]{border-color:rgba(178,149,232,.5);background:rgba(178,149,232,.08)} .feat.on[data-k="Q"] .k{color:var(--ask)}
+.feat:not(.on) .k{color:var(--ink-4)}
+.start{width:100%;justify-content:center;padding:15px;font-size:15px;margin-top:8px}
+.start .d{width:9px;height:9px;border-radius:50%;background:var(--rec);animation:pulse 1.7s infinite}
+.backlink{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3);cursor:pointer;margin-bottom:20px}
+.backlink:hover{color:var(--ink)}
+
+/* post analysis */
+.act-edit{display:flex;gap:13px;align-items:flex-start;padding:15px 16px;border:1px solid var(--line-soft);background:var(--bg-2);border-radius:var(--r-m);margin-bottom:10px}
+.ck{width:19px;height:19px;border-radius:6px;border:1.5px solid var(--line);flex:none;margin-top:1px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s}
+.ck.on{background:var(--gold);border-color:var(--gold)}
+.ck.on svg{color:#27200C;opacity:1}
+.ck svg{opacity:0;width:12px;height:12px}
+.ae-body{flex:1}
+.ae-top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
+.ae-title{font-size:14px;font-weight:600}
+.ae-controls{display:flex;align-items:center;gap:8px;flex:none}
+.mini{font-family:var(--f-mono);font-size:11px;color:var(--ink-3);background:var(--bg-3);border:1px solid var(--line);border-radius:6px;padding:4px 9px;display:flex;align-items:center;gap:5px;cursor:pointer}
+.mini:hover{color:var(--ink-2)}
+.quote{font-family:var(--f-disp);font-style:italic;font-size:13px;color:var(--ink-3);line-height:1.5;padding-left:12px;border-left:2px solid var(--line);margin-top:8px}
+.dec{display:flex;gap:11px;align-items:flex-start;padding:8px 0;font-size:13.5px;color:var(--ink-2);line-height:1.5}
+.dec::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--gold);margin-top:8px;flex:none;box-shadow:0 0 8px var(--gold)}
+.foot{display:flex;align-items:center;gap:14px;margin-top:34px;padding-top:22px;border-top:1px solid var(--line-soft)}
+
+/* radio (settings) */
+.radio{display:flex;gap:10px}
+.rad{flex:1;border:1px solid var(--line);background:var(--bg-2);border-radius:10px;padding:13px 14px;cursor:pointer;transition:.16s}
+.rad.on{border-color:var(--gold-line);background:var(--gold-soft)}
+.rad .rn{font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px}
+.rad .rd{font-size:11px;color:var(--ink-3);margin-top:5px}
+.ring{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--line);flex:none}
+.rad.on .ring{border-color:var(--gold);background:radial-gradient(circle,var(--gold) 42%,transparent 46%)}
+.set-sec{margin-bottom:14px}
+.set-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:15px 0;border-bottom:1px solid var(--line-soft)}
+.set-row:last-child{border-bottom:0}
+.set-row .si{flex:1}
+.set-row .sn{font-weight:600;font-size:13.5px}
+.set-row .sd{font-size:12px;color:var(--ink-3);margin-top:3px}
+.statusok{display:inline-flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:11px;color:var(--suggest)}
+.key-in{display:flex;gap:8px;align-items:center}
+.key-in .inp{font-family:var(--f-mono);font-size:13px;letter-spacing:.04em}
+
+/* onboarding split */
+.ob{flex:1;display:flex;overflow:hidden}
+.ob-brand{width:420px;flex:none;background:radial-gradient(600px 400px at 30% 20%,rgba(231,178,76,.1),transparent 60%),linear-gradient(160deg,#1B1610,#100E0B);border-right:1px solid var(--line-soft);padding:54px 44px;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden}
+.ob-brand .big{font-family:var(--f-disp);font-weight:600;font-size:46px;line-height:1.02;letter-spacing:-.03em}
+.ob-brand .tag{font-size:15px;color:var(--ink-2);line-height:1.6;margin-top:18px;max-width:300px}
+.ob-wave{display:flex;align-items:flex-end;gap:4px;height:60px;margin-top:30px}
+.ob-wave i{width:4px;background:linear-gradient(180deg,var(--gold),rgba(231,178,76,.25));border-radius:3px;animation:eq 1.4s infinite ease-in-out}
+.ob-steps-mini{display:flex;flex-direction:column;gap:14px}
+.osm{display:flex;align-items:center;gap:12px;font-size:13px;color:var(--ink-3)}
+.osm .n{width:24px;height:24px;border-radius:50%;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);font-size:11px;flex:none}
+.osm.done{color:var(--ink-2)} .osm.done .n{background:var(--gold-soft);border-color:var(--gold-line);color:var(--gold)}
+.osm.cur{color:var(--ink)} .osm.cur .n{background:var(--gold);border-color:var(--gold);color:#27200C;font-weight:600}
+.ob-form{flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 56px}
+.ob-form .step-no{font-family:var(--f-mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);margin-bottom:12px}
+.ob-form h2{font-family:var(--f-disp);font-weight:600;font-size:32px;letter-spacing:-.02em;margin-bottom:10px}
+.ob-form p{font-size:14px;color:var(--ink-2);line-height:1.6;margin-bottom:26px;max-width:420px}
+
+/* ===== reworked full-bleed layouts: new / post / settings ===== */
+.duo{flex:1;display:flex;overflow:hidden}
+/* new session: setup rail + context hero */
+.rail{width:432px;flex:none;border-right:1px solid var(--line-soft);display:flex;flex-direction:column}
+.rail-top{padding:30px 32px 14px}
+.rail-top .backlink{margin-bottom:16px}
+.rail-top h2{font-family:var(--f-disp);font-weight:600;font-size:30px;letter-spacing:-.02em;line-height:1;margin-top:2px}
+.rail-body{flex:1;overflow-y:auto;padding:8px 32px 20px}
+.rail-body .field{margin-bottom:20px}
+.rail .feat-grid{grid-template-columns:repeat(2,1fr)}
+.rail-foot{padding:16px 32px 24px;border-top:1px solid var(--line-soft)}
+.ctx{flex:1;display:flex;flex-direction:column;padding:34px 42px 34px;background:radial-gradient(700px 340px at 85% -60px,rgba(231,178,76,.05),transparent 70%)}
+.ctx-h{display:flex;align-items:center;gap:11px;margin-bottom:12px}
+.ctx-h .ci{width:32px;height:32px;border-radius:9px;background:var(--gold-soft);border:1px solid var(--gold-line);display:flex;align-items:center;justify-content:center;color:var(--gold)}
+.ctx-h .ct{font-family:var(--f-disp);font-weight:600;font-size:21px;letter-spacing:-.01em}
+.ctx .sub{font-size:13px;color:var(--ink-3);line-height:1.6;margin-bottom:18px;max-width:580px}
+.ctx textarea{flex:1;resize:none;width:100%;background:var(--bg-2);border:1px solid var(--line);border-radius:14px;padding:22px 24px;color:var(--ink);font-family:var(--f-ui);font-size:15px;line-height:1.78;outline:none;transition:.18s}
+.ctx textarea:focus{border-color:var(--gold-line);box-shadow:0 0 0 3px var(--gold-soft)}
+/* post-analysis: review main + reference rail */
+.post-main{flex:1;overflow-y:auto;padding:34px 44px 50px}
+.post-main>.eyebrow{margin-bottom:10px;display:block}
+.post-main h2{font-family:var(--f-disp);font-weight:600;font-size:34px;letter-spacing:-.025em;line-height:1;margin-bottom:30px}
+.post-rail{width:340px;flex:none;border-left:1px solid var(--line-soft);background:var(--bg-2);display:flex;flex-direction:column}
+.post-rail .pr-body{flex:1;overflow-y:auto;padding:30px 26px}
+.post-rail .pr-foot{padding:16px 22px;border-top:1px solid var(--line-soft);display:flex;flex-direction:column;gap:9px}
+.meta-card{border:1px solid var(--line-soft);border-radius:var(--r-m);padding:6px 16px;margin-bottom:28px;background:var(--bg-1)}
+.meta-card .mc-t{font-family:var(--f-disp);font-weight:600;font-size:18px;margin:12px 0 6px;letter-spacing:-.01em}
+.meta-card .mc-row{display:flex;justify-content:space-between;align-items:center;font-family:var(--f-mono);font-size:11.5px;padding:9px 0;color:var(--ink-3);border-top:1px solid var(--line-soft)}
+.meta-card .mc-row b{color:var(--ink-2);font-weight:500}
+/* settings: section nav + content */
+.set-nav{width:230px;flex:none;border-right:1px solid var(--line-soft);padding:28px 14px;display:flex;flex-direction:column;gap:2px}
+.set-nav .backlink{padding:0 12px;margin-bottom:4px}
+.set-nav .stitle{font-family:var(--f-disp);font-weight:600;font-size:22px;margin:6px 0 16px;padding:0 12px}
+.snav{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;font-size:13px;font-weight:500;color:var(--ink-3);cursor:pointer;transition:.15s}
+.snav:hover{background:var(--bg-2);color:var(--ink-2)}
+.snav.on{background:var(--gold-soft);color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold-line)}
+.snav svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.set-content{flex:1;overflow-y:auto;padding:38px 46px 50px;max-width:880px}
+.set-block{margin-bottom:38px}
+.set-block>.eyebrow{margin-bottom:16px;display:block}
+
+/* ============================ PROTO NAV ============================ */
+.proto-nav{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);display:flex;gap:3px;background:rgba(20,18,16,.86);backdrop-filter:blur(16px);border:1px solid #34302A;border-radius:13px;padding:5px;z-index:10000;box-shadow:0 18px 50px -12px rgba(0,0,0,.7)}
+.proto-nav button{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.04em;color:var(--ink-3);background:transparent;border:0;padding:8px 13px;border-radius:9px;cursor:pointer;transition:.16s;text-transform:uppercase}
+.proto-nav button:hover{background:var(--bg-3);color:var(--ink-2)}
+.proto-nav button.on{background:linear-gradient(180deg,var(--gold-2),var(--gold));color:#27200C;font-weight:600}
+</style>
+</head>
+<body>
+
+<div class="win">
+  <!-- title bar -->
+  <div class="titlebar">
+    <div class="lights"><span class="light l-c"></span><span class="light l-m"></span><span class="light l-x"></span></div>
+    <div class="tb-title"><b>Call&nbsp;Assistant</b></div>
+  </div>
+
+  <div class="stage">
+
+    <!-- ============ SCREEN: DASHBOARD ============ -->
+    <section class="screen active" id="s-dash">
+      <div class="topbar rise">
+        <div class="brand">
+          <span class="mark"><span><i></i><i></i><i></i><i></i><i></i></span></span>
+          <h1>Call Assistant</h1>
+        </div>
+        <div class="search">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input placeholder="Search sessions…">
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-gold" onclick="show('s-new')"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New Session</button>
+        <div class="gear" onclick="show('s-set')"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg></div>
+      </div>
+
+      <div class="split">
+        <!-- list -->
+        <div class="list-pane rise">
+          <div class="list-head">
+            <div class="eyebrow">12 sessions</div>
+            <div class="seg"><button class="on">All</button><button>KGL</button><button>Kifiya</button></div>
+          </div>
+          <div class="list scroll">
+            <div class="s-row sel">
+              <div class="top"><span class="name">Board Call Q2</span><span class="date">Mar 28</span></div>
+              <div class="meta"><div class="labels"><span class="lbl lbl-kgl">KGL</span></div><div class="right"><span class="dur">47m</span><span class="dot-late"></span>3 actions</div></div>
+            </div>
+            <div class="s-row">
+              <div class="top"><span class="name">Sprint Review</span><span class="date">Mar 27</span></div>
+              <div class="meta"><div class="labels"><span class="lbl lbl-kif">Kifiya</span></div><div class="right"><span class="dur">28m</span>1 action</div></div>
+            </div>
+            <div class="s-row">
+              <div class="top"><span class="name">1:1 with Sarah</span><span class="date">Mar 26</span></div>
+              <div class="meta"><div class="labels"><span class="lbl lbl-int">Internal</span></div><div class="right"><span class="dur">22m</span>1 action</div></div>
+            </div>
+            <div class="s-row">
+              <div class="top"><span class="name">Finance Sync</span><span class="date">Mar 25</span></div>
+              <div class="meta"><div class="labels"><span class="lbl lbl-kgl">KGL</span></div><div class="right"><span class="dur">32m</span>2 actions</div></div>
+            </div>
+            <div class="s-row">
+              <div class="top"><span class="name">API Planning</span><span class="date">Mar 22</span></div>
+              <div class="meta"><div class="labels"><span class="lbl lbl-kif">Kifiya</span></div><div class="right"><span class="dur">41m</span>done</div></div>
+            </div>
+            <div class="s-row">
+              <div class="top"><span class="name">Tech Review</span><span class="date">Mar 20</span></div>
+              <div class="meta"><div class="labels"><span class="lbl lbl-dev">KGL Dev</span></div><div class="right"><span class="dur">55m</span>done</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- detail -->
+        <div class="detail rise">
+          <div class="scroll">
+            <div class="d-head">
+              <div>
+                <div class="d-title">Board Call Q2</div>
+                <div class="d-meta"><span>📅 <b>Mar 28, 2026</b></span><span>⏱ <b>47 min</b></span><span>◈ <b>$0.85</b></span></div>
+              </div>
+              <button class="btn"><svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>Re-analyze</button>
+            </div>
+
+            <div class="sec">
+              <div class="sec-h"><div class="eyebrow">Summary</div></div>
+              <div class="card summary">Discussed <b>CBUAE Phase 2</b> timeline — the central bank extended the deadline to <b>Aug 2026</b>. KYC module certification is the critical dependency. Ahmed expects auditor results by <b>Apr 15</b>. A budget revision is needed for Q3 planning.</div>
+            </div>
+
+            <div class="sec">
+              <div class="sec-h"><div class="eyebrow">Actions · 3 of 4 open</div></div>
+              <div class="act"><span class="st st-done"></span><div class="body"><div class="t">Send CBUAE Phase 2 timeline to board</div><div class="sub">Me · due Apr 5 · done Apr 4</div></div><span class="tag tag-done">Done</span></div>
+              <div class="act"><span class="st st-pend"></span><div class="body"><div class="t">Review KYC audit results</div><div class="sub">Me · due Apr 15</div></div><span class="tag tag-pend">Pending</span></div>
+              <div class="act"><span class="st st-late"></span><div class="body"><div class="t">Send revised cost estimates</div><div class="sub">Ahmed · due Apr 8 · 2 days late</div></div><span class="tag tag-late">Late</span></div>
+            </div>
+
+            <div class="sec">
+              <div class="sec-h"><div class="eyebrow">Transcript</div><div class="mini" onclick="show('s-live')">Open playback</div></div>
+              <div class="card" style="padding:8px 18px">
+                <div class="tline"><div class="ts">00:00:05</div><div><div class="sp">You</div><div class="tx">Thanks everyone for joining. Let's nail down the CBUAE submission timeline today.</div></div></div>
+                <hr class="divider">
+                <div class="tline"><div class="ts">00:03:28</div><div><div class="sp">Sarah</div><div class="tx">The central bank pushed their deadline to August — but there's a hard dependency on the KYC module being certified first.</div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SCREEN: LIVE ============ -->
+    <section class="screen live" id="s-live">
+      <div class="live-bar rise">
+        <div class="rec"><span class="d"></span>REC</div>
+        <div class="live-title">Board Call Q2</div>
+        <div class="timer" id="timer">00:23:15</div>
+        <div class="spacer"></div>
+        <div class="dev">🎙 Mic: <b>AirPods Pro</b> <svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+        <div class="dev">🔈 <b>MacBook</b> <svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></div>
+        <div class="cost">cost <b>$0.12</b> / $5</div>
+        <div class="ctrl">
+          <button class="btn btn-ghost"><svg class="icon" viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
+          <button class="btn btn-rec" onclick="show('s-post')"><svg class="icon" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>End</button>
+        </div>
+      </div>
+
+      <div class="live-body">
+        <div class="tr-area" id="trArea">
+          <div class="tr"><div class="ts">00:21:22</div><div><div class="who who-you">You</div><div class="said">So the timeline for the CBUAE submission is what we need to nail down today.</div></div></div>
+          <div class="tr"><div class="ts">00:21:35</div><div><div class="who who-sar">Sarah</div><div class="said">The central bank pushed their deadline to August. But there's a hard dependency on the KYC module being certified first.</div></div></div>
+          <div class="tr"><div class="ts">00:21:48</div><div><div class="who who-you">You</div><div class="said">Right. What's the current status on KYC certification?</div></div></div>
+          <div class="tr"><div class="ts">00:21:53</div><div><div class="who who-ahm">Ahmed</div><div class="said">We submitted to the auditor last week. Expecting results by April 15th.</div></div></div>
+          <div class="tr muted"><div class="ts">00:22:10</div><div><div class="who who-you">You</div><div class="said">Good. And the cost estimates for Phase 2 — Ahmed, did you get those finalized?</div></div></div>
+          <div class="listening"><div class="eq"><i></i><i></i><i></i><i></i><i></i><i></i></div><span>Listening…</span></div>
+        </div>
+
+        <div class="ai">
+          <div class="ai-head">
+            <span class="lab">Live Intelligence</span>
+            <div class="toggles">
+              <button class="tg on" data-k="F">F</button>
+              <button class="tg on" data-k="C">C</button>
+              <button class="tg" data-k="S">S</button>
+              <button class="tg on" data-k="Q">Q</button>
+            </div>
+          </div>
+          <div class="findings scroll">
+            <div class="find f-fact">
+              <div class="fh"><span class="ft">Fact-check</span><span class="fts">00:21:35</span></div>
+              <div class="fc">Claim of an <b>"end of Q2"</b> deadline conflicts with context: CBUAE Phase 2 is due <b>Aug 2026</b> per Central Bank circular <b>CB-2025-041</b> — that's end of Q3.</div>
+            </div>
+            <div class="find f-commit">
+              <div class="fh"><span class="ft">Commitment</span><span class="fts">00:21:53</span></div>
+              <div class="fc">Ahmed → <b>KYC audit results by Apr 15</b>.</div>
+              <button class="save">+ Save action</button>
+            </div>
+            <div class="find f-ask">
+              <div class="fh"><span class="ft">Unanswered</span><span class="fts">00:22:10</span></div>
+              <div class="fc">Cost estimates for Phase 2 — question posed to Ahmed, still waiting on an answer.</div>
+            </div>
+          </div>
+          <div class="ask-bar">
+            <div class="ic"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div>
+            <input placeholder="Ask AI about the call…  “summarize what we've agreed so far”">
+            <button class="btn btn-gold"><svg class="icon" viewBox="0 0 24 24"><path d="m5 12 14 0M13 6l6 6-6 6"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SCREEN: NEW SESSION ============ -->
+    <section class="screen" id="s-new">
+      <div class="duo">
+        <div class="rail rise">
+          <div class="rail-top">
+            <div class="backlink" onclick="show('s-dash')"><svg class="icon" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Dashboard</div>
+            <div class="eyebrow">Prepare</div>
+            <h2>New Session</h2>
+          </div>
+          <div class="rail-body scroll">
+            <div class="field"><label>Session name</label><input class="inp" value="Board Call Q2"></div>
+            <div class="field"><label>Labels</label>
+              <div class="chips-in"><span class="lbl lbl-kgl">KGL</span><span class="lbl lbl-int">Board</span><button class="add">+ add</button></div>
+            </div>
+            <div class="field"><label>Participants <span style="color:var(--ink-4);text-transform:none;letter-spacing:0">· optional</span></label><input class="inp" placeholder="Sarah, Ahmed"></div>
+            <div class="field"><label>Live analysis</label>
+              <div class="feat-grid">
+                <div class="feat on" data-k="F"><div class="k">F</div><div class="n">Fact-check</div></div>
+                <div class="feat on" data-k="C"><div class="k">C</div><div class="n">Commitments</div></div>
+                <div class="feat" data-k="S"><div class="k">S</div><div class="n">Suggestions</div></div>
+                <div class="feat on" data-k="Q"><div class="k">Q</div><div class="n">Questions</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="rail-foot">
+            <button class="btn btn-gold start" onclick="show('s-live')"><span class="d"></span>Start Session</button>
+          </div>
+        </div>
+        <div class="ctx rise">
+          <div class="ctx-h"><span class="ci"><svg class="icon" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><span class="ct">Context for AI</span></div>
+          <div class="sub">This is what the AI fact-checks the live conversation against. Paste the agenda, key numbers, prior commitments, anything decided last time — the richer this is, the sharper the live analysis during your call.</div>
+          <textarea>Follow-up to the Q1 board meeting.
+
+Discussing CBUAE Phase 2 delays and the KYC module certification timeline. Central bank circular CB-2025-041 sets the Phase 2 deadline at Aug 2026.
+
+Ahmed owes cost estimates from the last call. Sarah is tracking the KYC vendor relationship.</textarea>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SCREEN: POST-ANALYSIS ============ -->
+    <section class="screen" id="s-post">
+      <div class="duo">
+        <div class="post-main scroll rise">
+          <div class="eyebrow">Review &amp; save</div>
+          <h2>Post-Analysis</h2>
+
+          <div class="sec-h"><div class="eyebrow">Summary</div><button class="mini"><svg class="icon" width="12" height="12" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>Regenerate</button></div>
+          <div class="card summary" style="margin-bottom:32px">Discussed <b>CBUAE Phase 2</b> timeline — central bank extended the deadline to <b>Aug 2026</b>. KYC module certification is the critical dependency. Ahmed expects auditor results by <b>Apr 15</b>. Budget revision needed for Q3 planning.</div>
+
+          <div class="sec-h"><div class="eyebrow">Extracted actions · 4 found</div></div>
+          <div class="act-edit">
+            <div class="ck on" onclick="this.classList.toggle('on')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5 9-11"/></svg></div>
+            <div class="ae-body">
+              <div class="ae-top"><div class="ae-title">Send CBUAE Phase 2 timeline to board</div><div class="ae-controls"><span class="mini">Me ▾</span><span class="mini">Apr 5</span></div></div>
+              <div class="quote">“I'll circulate the updated timeline to the board by Friday”</div>
+            </div>
+          </div>
+          <div class="act-edit">
+            <div class="ck on" onclick="this.classList.toggle('on')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5 9-11"/></svg></div>
+            <div class="ae-body">
+              <div class="ae-top"><div class="ae-title">Deliver KYC audit results</div><div class="ae-controls"><span class="mini">Ahmed ▾</span><span class="mini">Apr 15</span></div></div>
+              <div class="quote">“Expecting results by April 15th”</div>
+            </div>
+          </div>
+          <div class="act-edit">
+            <div class="ck on" onclick="this.classList.toggle('on')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5 9-11"/></svg></div>
+            <div class="ae-body">
+              <div class="ae-top"><div class="ae-title">Prepare budget revision for Q3</div><div class="ae-controls"><span class="mini">Me ▾</span><span class="mini">Apr 10</span></div></div>
+              <div class="quote">“Let's get the revised numbers together before the next board”</div>
+            </div>
+          </div>
+          <div class="act-edit" style="opacity:.6">
+            <div class="ck" onclick="this.classList.toggle('on')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="m5 12 5 5 9-11"/></svg></div>
+            <div class="ae-body">
+              <div class="ae-top"><div class="ae-title">Share updated risk assessment</div><div class="ae-controls"><span class="mini">Sarah ▾</span><span class="mini">— set</span></div></div>
+              <div class="quote">AI suggestion, not a clear commitment — leave unchecked to discard.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="post-rail rise">
+          <div class="pr-body scroll">
+            <div class="meta-card">
+              <div class="mc-t">Board Call Q2</div>
+              <div class="mc-row"><span>DATE</span><b>Mar 28, 2026</b></div>
+              <div class="mc-row"><span>DURATION</span><b>47 min</b></div>
+              <div class="mc-row"><span>PARTICIPANTS</span><b>3</b></div>
+              <div class="mc-row"><span>API COST</span><b style="color:var(--gold)">$0.85</b></div>
+            </div>
+            <div class="sec-h"><div class="eyebrow">Decisions</div></div>
+            <div class="dec">Phase 2 deadline moved to Aug 2026</div>
+            <div class="dec">Will proceed with the current KYC vendor</div>
+            <div class="dec">Q3 budget revision triggered</div>
+          </div>
+          <div class="pr-foot">
+            <button class="btn btn-gold" style="justify-content:center" onclick="show('s-dash')">Save &amp; Close</button>
+            <button class="btn btn-ghost" style="justify-content:center" onclick="show('s-live')">Back to Transcript</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SCREEN: SETTINGS ============ -->
+    <section class="screen" id="s-set">
+      <div class="duo">
+        <div class="set-nav rise">
+          <div class="backlink" onclick="show('s-dash')"><svg class="icon" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Dashboard</div>
+          <div class="stitle">Settings</div>
+          <div class="snav on"><svg viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>API &amp; AI</div>
+          <div class="snav"><svg viewBox="0 0 24 24"><path d="M3 10v4h4l5 4V6L7 10H3zM16 8a5 5 0 0 1 0 8"/></svg>Audio</div>
+          <div class="snav"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/></svg>Transcription</div>
+          <div class="snav"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7"/></svg>Storage</div>
+        </div>
+        <div class="set-content scroll rise">
+          <div class="set-block">
+            <div class="eyebrow">API &amp; intelligence</div>
+            <div class="field"><label>Claude API key</label>
+              <div class="key-in"><input class="inp" type="password" value="sk-ant-api03-xxxxxxxxxxxxxxxxxxxx"><button class="btn">Show</button><button class="btn btn-gold">Test</button></div>
+              <div style="margin-top:10px"><span class="statusok"><svg class="icon" width="13" height="13" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Connected · keys stored in macOS Keychain</span></div>
+            </div>
+            <div class="field"><label>Default live analysis for new sessions</label>
+              <div class="feat-grid">
+                <div class="feat on" data-k="F"><div class="k">F</div><div class="n">Fact-check</div></div>
+                <div class="feat on" data-k="C"><div class="k">C</div><div class="n">Commitments</div></div>
+                <div class="feat" data-k="S"><div class="k">S</div><div class="n">Suggestions</div></div>
+                <div class="feat on" data-k="Q"><div class="k">Q</div><div class="n">Questions</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="set-block">
+            <div class="eyebrow">Audio</div>
+            <div class="field"><label>Capture device</label>
+              <div class="set-row" style="border:1px solid var(--line);border-radius:10px;padding:13px 15px">
+                <div class="si"><div class="sn">Call Assistant (2ch)</div><div class="sd">Virtual device — selected as mic/speaker in your meeting app</div></div>
+                <svg class="icon" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+              </div>
+            </div>
+          </div>
+
+          <div class="set-block">
+            <div class="eyebrow">Transcription</div>
+            <div class="field"><label>Whisper model</label>
+              <div class="radio">
+                <div class="rad"><div class="rn"><span class="ring"></span>Base</div><div class="rd">Fastest · lower accuracy</div></div>
+                <div class="rad on"><div class="rn"><span class="ring"></span>Small</div><div class="rd">Balanced · recommended</div></div>
+                <div class="rad"><div class="rn"><span class="ring"></span>Medium</div><div class="rd">Slower · most accurate</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="set-block">
+            <div class="eyebrow">Storage</div>
+            <div class="set-row" style="border:1px solid var(--line-soft);border-radius:10px;padding:13px 15px">
+              <div class="si"><div class="sn">Data location</div><div class="sd mono" style="font-size:11px">~/Library/Application Support/CallAssistant</div></div>
+              <button class="btn">Reveal in Finder</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SCREEN: ONBOARDING ============ -->
+    <section class="screen" id="s-onb">
+      <div class="ob">
+        <div class="ob-brand">
+          <div>
+            <span class="mark" style="width:34px;height:34px;border-radius:10px"><span style="height:16px"><i></i><i></i><i></i><i></i><i></i></span></span>
+            <div class="big" style="margin-top:26px">Call<br>Assistant</div>
+            <div class="tag">Your invisible meeting partner. It listens, transcribes locally, and turns every conversation into tracked commitments.</div>
+            <div class="ob-wave" id="obWave"></div>
+          </div>
+          <div class="ob-steps-mini">
+            <div class="osm done"><span class="n">✓</span>Welcome</div>
+            <div class="osm cur"><span class="n">2</span>Connect Claude</div>
+            <div class="osm"><span class="n">3</span>Audio device</div>
+            <div class="osm"><span class="n">4</span>Transcription model</div>
+          </div>
+        </div>
+        <div class="ob-form">
+          <div class="step-no rise">Step 2 of 4</div>
+          <h2 class="rise">Connect to Claude</h2>
+          <p class="rise">Paste your Claude API key. It powers live fact-checking, commitment detection, and post-call analysis. Stored only in your macOS Keychain — never leaves your machine.</p>
+          <div class="rise" style="max-width:440px">
+            <div class="field"><label>Claude API key</label>
+              <div class="key-in"><input class="inp" type="password" value="sk-ant-api03-xxxxxxxxxxxxxxxxxxxx"><button class="btn">Show</button></div>
+            </div>
+            <div style="display:flex;gap:12px;margin-top:8px">
+              <button class="btn btn-gold" style="padding:12px 22px">Test &amp; continue</button>
+              <button class="btn btn-ghost">Skip for now</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /stage -->
+</div><!-- /win -->
+
+<!-- prototype nav -->
+<div class="proto-nav" id="nav">
+  <button data-t="s-onb" onclick="show('s-onb')">Onboarding</button>
+  <button data-t="s-dash" class="on" onclick="show('s-dash')">Dashboard</button>
+  <button data-t="s-new" onclick="show('s-new')">New</button>
+  <button data-t="s-live" onclick="show('s-live')">● Live</button>
+  <button data-t="s-post" onclick="show('s-post')">Post</button>
+  <button data-t="s-set" onclick="show('s-set')">Settings</button>
+</div>
+
+<script>
+function show(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on', b.dataset.t===id));
+  if(id==='s-live'){const a=document.getElementById('trArea'); if(a) a.scrollTop=a.scrollHeight;}
+}
+// toggles (live + feature grids)
+document.querySelectorAll('.tg,.feat').forEach(t=>t.addEventListener('click',()=>t.classList.toggle('on')));
+// live timer
+let secs=23*60+15;
+setInterval(()=>{
+  if(!document.getElementById('s-live').classList.contains('active'))return;
+  secs++; const h=String(Math.floor(secs/3600)).padStart(2,'0'),m=String(Math.floor(secs%3600/60)).padStart(2,'0'),s=String(secs%60).padStart(2,'0');
+  const el=document.getElementById('timer'); if(el) el.textContent=`${h}:${m}:${s}`;
+},1000);
+// onboarding waveform bars
+(function(){const w=document.getElementById('obWave');if(!w)return;const hs=[20,38,52,30,46,58,34,44,24,40,54,28,48,36,22];
+ hs.forEach((h,i)=>{const b=document.createElement('i');b.style.height=h+'px';b.style.animationDelay=(i*.09)+'s';b.style.animationDuration=(1.1+(i%4)*.18)+'s';w.appendChild(b);});})();
+</script>
+</body>
+</html>

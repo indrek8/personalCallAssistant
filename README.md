@@ -26,7 +26,7 @@ docs/
 └── architecture.md   tech stack · audio pipeline · data model (MVP-now vs v1-target)
 design/
 ├── ui-spec.md                  the 6-screen UI/UX spec
-├── dashboard-prototype.html    canonical prototype — open in a browser
+├── prototype.html              high-fidelity visual prototype — all 6 screens, open in a browser
 └── sidebar-prototype.jsx       vNext reference (the sidebar + projects direction)
 ```
 
