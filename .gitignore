@@ -20,6 +20,18 @@ node_modules/
 /dist/
 /build/
 
+# SvelteKit
+/.svelte-kit
+/package
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Rust / Tauri build artifacts
+src-tauri/target/
+spikes/target/
+# Tauri auto-generated capability schemas
+src-tauri/gen/schemas
+
 # Python
 __pycache__/
 *.py[cod]
