@@ -235,7 +235,8 @@ sessions/{uuid}/
 
 ## 10. Configuration & Secrets
 
-- **API key** → macOS **Keychain** via the `keyring` crate. Never written to `settings.json` or logs.
+- **API key (shipped app)** → macOS **Keychain** via the `keyring` crate. Never written to `settings.json` or logs.
+- **API key (dev / spikes)** → a gitignored root **`.env`** loaded via `dotenvy` (`.env.example` is the tracked template). The shipped app uses Keychain, not `.env`.
 - **`settings.json`** → `{ capture_device_id, whisper_model, default_toggles, budget_default, storage_path, first_run }`.
 - **Model files** → downloaded on demand to `models/`, checksum-verified.
 

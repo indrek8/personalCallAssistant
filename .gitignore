@@ -9,9 +9,10 @@
 .idea/
 *.swp
 
-# Environment / secrets
+# Environment / secrets — real .env stays local; the .example template IS tracked
 .env
 .env.*
+!.env.example
 *.local
 
 # Node / build artifacts (root-level only — anchored so docs/build/ is NOT ignored)
