@@ -1,0 +1,1842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Call Assistant — Prototype</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ===== RESET & BASE ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-base: #1a1a1e;
+  --bg-surface: #222226;
+  --bg-elevated: #2a2a2f;
+  --bg-hover: #323238;
+  --bg-selected: #2d3a4a;
+  --border: #38383e;
+  --border-subtle: #2e2e34;
+  --text-primary: #e8e8ec;
+  --text-secondary: #9a9aa0;
+  --text-tertiary: #6a6a72;
+  --accent: #4a9eff;
+  --accent-dim: #2a5a9a;
+  --red: #ff453a;
+  --red-dim: rgba(255,69,58,0.15);
+  --red-glow: rgba(255,69,58,0.3);
+  --green: #30d158;
+  --green-dim: rgba(48,209,88,0.12);
+  --amber: #ffd60a;
+  --amber-dim: rgba(255,214,10,0.12);
+  --blue: #64d2ff;
+  --blue-dim: rgba(100,210,255,0.12);
+  --purple: #bf5af2;
+  --purple-dim: rgba(191,90,242,0.12);
+  --orange: #ff9f0a;
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 14px;
+  --shadow-elevated: 0 8px 32px rgba(0,0,0,0.4);
+  --transition: 0.2s ease;
+}
+
+html { font-size: 13px; }
+body {
+  font-family: var(--font-sans);
+  background: #111114;
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== WINDOW FRAME ===== */
+.window-frame {
+  width: 1120px;
+  height: 720px;
+  margin: 20px auto;
+  background: var(--bg-base);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 0 0.5px rgba(255,255,255,0.06);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+/* ===== TRAFFIC LIGHTS ===== */
+.traffic-lights {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  display: flex;
+  gap: 8px;
+  z-index: 100;
+}
+.traffic-light {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.tl-close { background: #ff5f57; }
+.tl-min   { background: #febc2e; }
+.tl-max   { background: #28c840; }
+
+/* ===== SCREENS ===== */
+.screen { display: none; flex-direction: column; height: 100%; }
+.screen.active { display: flex; }
+
+/* ===== SCREEN NAV (prototype only) ===== */
+.proto-nav {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  background: rgba(30,30,36,0.92);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 5px;
+  z-index: 1000;
+}
+.proto-nav button {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.proto-nav button:hover { background: var(--bg-hover); color: var(--text-primary); }
+.proto-nav button.active { background: var(--accent); color: #fff; }
+
+/* ===== COMMON ELEMENTS ===== */
+.topbar {
+  height: 52px;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px 0 84px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  gap: 12px;
+}
+.topbar-title {
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.2px;
+}
+.topbar-spacer { flex: 1; }
+
+.btn {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn:hover { background: var(--bg-hover); border-color: #48484e; }
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover { background: #5aadff; }
+.btn-danger {
+  background: transparent;
+  border-color: var(--red);
+  color: var(--red);
+}
+.btn-lg {
+  font-size: 14px;
+  padding: 12px 32px;
+  border-radius: var(--radius-m);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+.input {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  outline: none;
+  width: 100%;
+  transition: var(--transition);
+}
+.input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(74,158,255,0.15); }
+.input::placeholder { color: var(--text-tertiary); }
+
+textarea.input {
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.5;
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 10px;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 20px 0;
+}
+
+/* ===== SCREEN 1: SETUP ===== */
+.setup-screen {
+  background: var(--bg-base);
+  justify-content: center;
+  align-items: center;
+}
+.setup-container {
+  width: 460px;
+  padding: 40px 0;
+}
+.setup-header {
+  text-align: center;
+  margin-bottom: 36px;
+}
+.setup-logo {
+  width: 56px; height: 56px;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  border-radius: 14px;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+.setup-header h1 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  margin-bottom: 6px;
+}
+.setup-header p {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.setup-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.setup-step {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  padding: 20px;
+}
+.setup-step-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.step-number {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.step-number.done {
+  background: var(--green-dim);
+  color: var(--green);
+}
+.setup-step-title {
+  font-weight: 500;
+  font-size: 14px;
+}
+.setup-step-desc {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+.input-row {
+  display: flex;
+  gap: 8px;
+}
+.input-row .input { flex: 1; }
+
+.status-ok {
+  font-size: 12px;
+  color: var(--green);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.model-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.model-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.model-option:hover { border-color: var(--accent); }
+.model-option.selected { border-color: var(--accent); background: rgba(74,158,255,0.06); }
+.model-radio {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.model-option.selected .model-radio {
+  border-color: var(--accent);
+}
+.model-option.selected .model-radio::after {
+  content: '';
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.model-name { font-weight: 500; font-size: 13px; }
+.model-desc { font-size: 11px; color: var(--text-secondary); margin-left: auto; }
+
+.setup-footer {
+  text-align: center;
+  margin-top: 32px;
+}
+
+/* ===== SCREEN 2: DASHBOARD ===== */
+.dashboard-screen { }
+.dashboard-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Left pane: session list */
+.session-list-pane {
+  width: 440px;
+  min-width: 440px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.session-list-header {
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.search-input {
+  flex: 1;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  padding: 6px 10px 6px 28px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  outline: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236a6a72' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 8px center;
+}
+.filter-btn {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.session-table {
+  flex: 1;
+  overflow-y: auto;
+}
+.session-row {
+  display: grid;
+  grid-template-columns: 1fr auto 72px 56px 52px;
+  align-items: center;
+  padding: 11px 16px;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: var(--transition);
+  font-size: 12px;
+}
+.session-row:hover { background: var(--bg-hover); }
+.session-row.selected { background: var(--bg-selected); }
+
+.session-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-labels {
+  display: flex;
+  gap: 4px;
+}
+.label-chip {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.label-kgl { background: rgba(255,159,10,0.15); color: var(--orange); }
+.label-kifiya { background: rgba(100,210,255,0.12); color: var(--blue); }
+.label-internal { background: rgba(191,90,242,0.12); color: var(--purple); }
+.label-dev { background: rgba(48,209,88,0.12); color: var(--green); }
+.label-board { background: rgba(255,214,10,0.12); color: var(--amber); }
+
+.session-date { color: var(--text-secondary); white-space: nowrap; font-size: 11px; }
+.session-dur { color: var(--text-tertiary); text-align: right; font-size: 11px; }
+.session-actions-col {
+  text-align: right;
+  font-size: 11px;
+  font-weight: 500;
+}
+.actions-overdue { color: var(--red); }
+.actions-done { color: var(--text-tertiary); }
+
+/* Right pane: session detail */
+.session-detail-pane {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 28px;
+}
+.detail-header {
+  margin-bottom: 24px;
+}
+.detail-title {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  margin-bottom: 6px;
+}
+.detail-meta {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.detail-meta span { display: flex; align-items: center; gap: 4px; }
+
+.detail-section {
+  margin-bottom: 24px;
+}
+.detail-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.summary-block {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  padding: 14px 16px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.action-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.action-item:last-child { border-bottom: none; }
+.action-status {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.status-done { background: var(--green-dim); color: var(--green); }
+.status-pending { background: var(--amber-dim); color: var(--amber); }
+.status-late { background: var(--red-dim); color: var(--red); }
+.action-content { flex: 1; }
+.action-title { font-weight: 500; font-size: 13px; margin-bottom: 3px; }
+.action-meta { font-size: 11px; color: var(--text-tertiary); }
+
+.transcript-preview {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  padding: 14px 16px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.transcript-time {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+.transcript-speaker {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ===== SCREEN 3: NEW SESSION ===== */
+.new-session-screen {
+  background: var(--bg-base);
+}
+.new-session-body {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding-top: 40px;
+  overflow-y: auto;
+}
+.new-session-form {
+  width: 520px;
+}
+.form-group {
+  margin-bottom: 20px;
+}
+.form-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  display: block;
+}
+.label-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.label-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.label-tag .remove {
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0.5;
+  margin-left: 2px;
+}
+.add-label {
+  padding: 4px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  background: transparent;
+  font-family: var(--font-sans);
+}
+
+.feature-toggles {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.feature-toggle {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.feature-toggle.active-amber { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
+.feature-toggle.active-blue  { border-color: var(--blue); color: var(--blue); background: var(--blue-dim); }
+.feature-toggle.active-green { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+.feature-toggle.active-purple{ border-color: var(--purple); color: var(--purple); background: var(--purple-dim); }
+
+.start-btn-container {
+  text-align: center;
+  margin-top: 36px;
+}
+.btn-start {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  padding: 14px 48px;
+  border: none;
+  border-radius: var(--radius-m);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: var(--transition);
+  letter-spacing: -0.2px;
+}
+.btn-start:hover { background: #5aadff; transform: translateY(-1px); box-shadow: 0 4px 20px rgba(74,158,255,0.3); }
+
+/* ===== SCREEN 4: LIVE SESSION ===== */
+.live-screen {
+  background: var(--bg-base);
+}
+.live-topbar {
+  height: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px 0 84px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  gap: 12px;
+}
+.rec-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: pulse-rec 1.5s ease-in-out infinite;
+  box-shadow: 0 0 8px var(--red-glow);
+}
+@keyframes pulse-rec {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+.rec-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--red);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.live-session-name { font-weight: 500; font-size: 13px; }
+.live-timer {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.live-cost {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  background: var(--bg-base);
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.live-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.transcript-panel {
+  flex: 6;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.transcript-entry {
+  padding: 6px 0;
+}
+.transcript-entry-header {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-bottom: 3px;
+}
+.t-time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  min-width: 60px;
+}
+.t-speaker {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent);
+}
+.t-text {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  padding-left: 70px;
+}
+
+.panel-divider {
+  height: 5px;
+  background: var(--border);
+  cursor: ns-resize;
+  position: relative;
+}
+.panel-divider::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--text-tertiary);
+}
+
+.ai-panel {
+  flex: 4;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  background: rgba(26,26,30,0.6);
+}
+.ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.ai-panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.ai-toggles {
+  display: flex;
+  gap: 4px;
+}
+.ai-toggle-pill {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  width: 26px; height: 22px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+}
+.ai-toggle-pill.on-amber  { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
+.ai-toggle-pill.on-blue   { border-color: var(--blue); color: var(--blue); background: var(--blue-dim); }
+.ai-toggle-pill.on-green  { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+.ai-toggle-pill.on-purple { border-color: var(--purple); color: var(--purple); background: var(--purple-dim); }
+
+.ai-feed {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ai-finding {
+  padding: 10px 12px;
+  border-radius: var(--radius-s);
+  border-left: 3px solid;
+}
+.ai-finding-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
+}
+.ai-finding.fact-check {
+  background: var(--amber-dim);
+  border-left-color: var(--amber);
+}
+.ai-finding.fact-check .ai-finding-header { color: var(--amber); }
+.ai-finding.commitment {
+  background: var(--blue-dim);
+  border-left-color: var(--blue);
+}
+.ai-finding.commitment .ai-finding-header { color: var(--blue); }
+.ai-finding.unanswered {
+  background: var(--purple-dim);
+  border-left-color: var(--purple);
+}
+.ai-finding.unanswered .ai-finding-header { color: var(--purple); }
+
+.ai-finding-body {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.ai-finding-ref {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+.ai-finding-actions {
+  margin-top: 6px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ai-ask-bar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+.ai-ask-input {
+  flex: 1;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  padding: 7px 12px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  outline: none;
+}
+.ai-ask-input::placeholder { color: var(--text-tertiary); }
+.ai-ask-send {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  width: 32px;
+  border: none;
+  border-radius: var(--radius-s);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+
+/* ===== SCREEN 5: POST-PROCESSING ===== */
+.post-screen {
+  background: var(--bg-base);
+}
+.post-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 40px;
+  display: flex;
+  justify-content: center;
+}
+.post-container {
+  width: 640px;
+}
+.post-header {
+  margin-bottom: 28px;
+}
+.post-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  margin-bottom: 8px;
+}
+.post-meta {
+  display: flex;
+  gap: 20px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.post-section {
+  margin-bottom: 28px;
+}
+.post-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.post-summary {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+}
+
+.post-action-item {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  padding: 14px 16px;
+  margin-bottom: 8px;
+}
+.post-action-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.post-action-check {
+  width: 18px; height: 18px;
+  border-radius: 4px;
+  border: 2px solid var(--accent);
+  background: rgba(74,158,255,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 11px;
+}
+.post-action-check.unchecked {
+  border-color: var(--text-tertiary);
+  background: transparent;
+  color: transparent;
+}
+.post-action-title {
+  flex: 1;
+  font-weight: 500;
+  font-size: 13px;
+}
+.post-action-delete {
+  font-size: 16px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0 4px;
+}
+.post-action-fields {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding-left: 28px;
+}
+.mini-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.mini-select, .mini-input {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+.post-action-quote {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-style: italic;
+  padding-left: 28px;
+  border-left: 2px solid var(--border-subtle);
+  margin-left: 28px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.post-action-item.ai-suggestion {
+  border-style: dashed;
+  opacity: 0.75;
+}
+.ai-suggestion-note {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  padding-left: 28px;
+  margin-top: 4px;
+}
+
+.decisions-list {
+  list-style: none;
+  padding: 0;
+}
+.decisions-list li {
+  padding: 6px 0;
+  padding-left: 16px;
+  position: relative;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.decisions-list li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--text-tertiary);
+}
+.decisions-list li:last-child { border-bottom: none; }
+
+.post-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* ===== SCREEN 6: SETTINGS ===== */
+.settings-screen {
+  background: var(--bg-base);
+}
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 28px 40px;
+  display: flex;
+  justify-content: center;
+}
+.settings-container {
+  width: 540px;
+}
+.settings-section {
+  margin-bottom: 28px;
+}
+.settings-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 14px;
+}
+.settings-field {
+  margin-bottom: 14px;
+}
+.settings-field-label {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+.settings-field-desc {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+.masked-input-row {
+  display: flex;
+  gap: 6px;
+}
+.masked-input-row .input { flex: 1; }
+.icon-btn {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  width: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.storage-path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 10px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #48484e; }
+
+/* ===== GEAR ICON ===== */
+.gear-icon {
+  cursor: pointer;
+  color: var(--text-tertiary);
+  transition: var(--transition);
+  font-size: 16px;
+}
+.gear-icon:hover { color: var(--text-primary); }
+</style>
+</head>
+<body>
+
+<div class="window-frame">
+  <div class="traffic-lights">
+    <div class="traffic-light tl-close"></div>
+    <div class="traffic-light tl-min"></div>
+    <div class="traffic-light tl-max"></div>
+  </div>
+
+  <!-- ===================== SCREEN 1: SETUP ===================== -->
+  <div class="screen setup-screen active" id="screen-setup">
+    <div class="topbar" style="justify-content:center;">
+      <span class="topbar-title" style="padding-left:0;">Setup</span>
+    </div>
+    <div style="flex:1;overflow-y:auto;display:flex;justify-content:center;padding:24px 0;">
+      <div class="setup-container">
+        <div class="setup-header">
+          <div class="setup-logo">📞</div>
+          <h1>Call Assistant</h1>
+          <p>Let's get you set up. This takes about 2 minutes.</p>
+        </div>
+
+        <div class="setup-steps">
+          <!-- Step 1: API Key -->
+          <div class="setup-step">
+            <div class="setup-step-header">
+              <div class="step-number done">✓</div>
+              <div class="setup-step-title">Claude API Key</div>
+            </div>
+            <div class="setup-step-desc">Connect to Claude for AI analysis during and after calls.</div>
+            <div class="input-row">
+              <input class="input" type="password" value="sk-ant-api03-xxxxxxxxxxxx" style="font-family:var(--font-mono);">
+              <button class="btn">👁</button>
+              <button class="btn" style="color:var(--green);border-color:var(--green);">Tested ✓</button>
+            </div>
+            <div class="status-ok">✓ Connected to Claude API</div>
+          </div>
+
+          <!-- Step 2: Audio Device -->
+          <div class="setup-step">
+            <div class="setup-step-header">
+              <div class="step-number done">✓</div>
+              <div class="setup-step-title">Audio Capture Device</div>
+            </div>
+            <div class="setup-step-desc">Select the audio device your meeting apps output to. You'll need a virtual audio device like BlackHole or Loopback.</div>
+            <select class="input" style="cursor:pointer;">
+              <option>Call Assistant (BlackHole 2ch)</option>
+              <option>MacBook Pro Speakers</option>
+              <option>External Headphones</option>
+            </select>
+          </div>
+
+          <!-- Step 3: Whisper Model -->
+          <div class="setup-step">
+            <div class="setup-step-header">
+              <div class="step-number">3</div>
+              <div class="setup-step-title">Transcription Model</div>
+            </div>
+            <div class="setup-step-desc">Choose the Whisper model for local speech-to-text. Runs entirely on your Mac.</div>
+            <div class="model-options">
+              <div class="model-option">
+                <div class="model-radio"></div>
+                <span class="model-name">Base</span>
+                <span class="model-desc">Fastest, lower accuracy</span>
+              </div>
+              <div class="model-option selected">
+                <div class="model-radio"></div>
+                <span class="model-name">Small</span>
+                <span class="model-desc">Balanced (recommended)</span>
+              </div>
+              <div class="model-option">
+                <div class="model-radio"></div>
+                <span class="model-name">Medium</span>
+                <span class="model-desc">Slower, higher accuracy</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="setup-footer">
+          <button class="btn btn-primary btn-lg" onclick="showScreen('screen-dashboard')">Complete Setup →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SCREEN 2: DASHBOARD ===================== -->
+  <div class="screen dashboard-screen" id="screen-dashboard">
+    <div class="topbar">
+      <span class="topbar-title">Call Assistant</span>
+      <div class="topbar-spacer"></div>
+      <button class="btn btn-primary" onclick="showScreen('screen-new-session')">+ New Session</button>
+      <span class="gear-icon" onclick="showScreen('screen-settings')">⚙</span>
+    </div>
+    <div class="dashboard-body">
+      <!-- Left pane -->
+      <div class="session-list-pane">
+        <div class="session-list-header">
+          <input class="search-input" placeholder="Search sessions..." style="flex:1;">
+          <button class="filter-btn">All labels ▾</button>
+        </div>
+        <div class="session-table">
+          <div class="session-row selected">
+            <span class="session-name">Board Call Q2</span>
+            <div class="session-labels">
+              <span class="label-chip label-kgl">KGL</span>
+              <span class="label-chip label-board">Board</span>
+            </div>
+            <span class="session-date">Mar 28</span>
+            <span class="session-dur">47m</span>
+            <span class="session-actions-col actions-overdue">3 ⚠</span>
+          </div>
+          <div class="session-row">
+            <span class="session-name">Sprint Review</span>
+            <div class="session-labels">
+              <span class="label-chip label-kifiya">Kifiya</span>
+            </div>
+            <span class="session-date">Mar 27</span>
+            <span class="session-dur">28m</span>
+            <span class="session-actions-col">1</span>
+          </div>
+          <div class="session-row">
+            <span class="session-name">1:1 Sarah</span>
+            <div class="session-labels">
+              <span class="label-chip label-internal">Internal</span>
+            </div>
+            <span class="session-date">Mar 26</span>
+            <span class="session-dur">22m</span>
+            <span class="session-actions-col">1</span>
+          </div>
+          <div class="session-row">
+            <span class="session-name">Finance Sync</span>
+            <div class="session-labels">
+              <span class="label-chip label-kgl">KGL</span>
+            </div>
+            <span class="session-date">Mar 25</span>
+            <span class="session-dur">32m</span>
+            <span class="session-actions-col">2</span>
+          </div>
+          <div class="session-row">
+            <span class="session-name">API Planning</span>
+            <div class="session-labels">
+              <span class="label-chip label-kifiya">Kifiya</span>
+            </div>
+            <span class="session-date">Mar 22</span>
+            <span class="session-dur">41m</span>
+            <span class="session-actions-col actions-done">done</span>
+          </div>
+          <div class="session-row">
+            <span class="session-name">Tech Review</span>
+            <div class="session-labels">
+              <span class="label-chip label-dev">KGL Dev</span>
+            </div>
+            <span class="session-date">Mar 20</span>
+            <span class="session-dur">55m</span>
+            <span class="session-actions-col actions-done">done</span>
+          </div>
+          <div class="session-row">
+            <span class="session-name">Investor Prep</span>
+            <div class="session-labels">
+              <span class="label-chip label-kifiya">Kifiya</span>
+              <span class="label-chip label-board">Board</span>
+            </div>
+            <span class="session-date">Mar 18</span>
+            <span class="session-dur">38m</span>
+            <span class="session-actions-col actions-done">done</span>
+          </div>
+          <div class="session-row">
+            <span class="session-name">CBUAE Workstream</span>
+            <div class="session-labels">
+              <span class="label-chip label-kgl">KGL</span>
+            </div>
+            <span class="session-date">Mar 15</span>
+            <span class="session-dur">63m</span>
+            <span class="session-actions-col actions-done">done</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right pane -->
+      <div class="session-detail-pane">
+        <div class="detail-header">
+          <div class="detail-title">Board Call Q2</div>
+          <div class="detail-meta">
+            <span>📅 Mar 28, 2026</span>
+            <span>⏱ 47 min</span>
+            <span>💰 $0.85</span>
+            <span>
+              <span class="label-chip label-kgl" style="font-size:10px;">KGL</span>
+              <span class="label-chip label-board" style="font-size:10px;">Board</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-header">
+            <div class="section-label">Summary</div>
+          </div>
+          <div class="summary-block">
+            Discussed CBUAE Phase 2 timeline. Central bank extended the deadline to August 2026. KYC module certification is the critical dependency. Ahmed expects auditor results by April 15. Budget revision needed for Q3 planning. Board agreed to proceed with the current KYC vendor.
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-header">
+            <div class="section-label">Actions</div>
+            <span style="font-size:11px;color:var(--text-tertiary);">3 of 4 completed</span>
+          </div>
+
+          <div class="action-item">
+            <div class="action-status status-done">✓</div>
+            <div class="action-content">
+              <div class="action-title">Send CBUAE timeline to board</div>
+              <div class="action-meta">Me · Completed Apr 1</div>
+            </div>
+          </div>
+          <div class="action-item">
+            <div class="action-status status-pending">●</div>
+            <div class="action-content">
+              <div class="action-title">KYC audit review</div>
+              <div class="action-meta">Me · Due Apr 15</div>
+            </div>
+          </div>
+          <div class="action-item">
+            <div class="action-status status-late">!</div>
+            <div class="action-content">
+              <div class="action-title">Deliver cost estimates for Phase 2</div>
+              <div class="action-meta">Ahmed · Due Apr 8 · <span style="color:var(--red);">3 days late</span></div>
+            </div>
+          </div>
+          <div class="action-item">
+            <div class="action-status status-done">✓</div>
+            <div class="action-content">
+              <div class="action-title">Prepare budget revision for Q3</div>
+              <div class="action-meta">Me · Completed Apr 3</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-section">
+          <div class="detail-section-header">
+            <div class="section-label">Transcript</div>
+          </div>
+          <div class="transcript-preview">
+            <span class="transcript-time">00:00:05</span> <span class="transcript-speaker">Speaker</span><br>
+            Thanks everyone for joining. Let's jump right in.<br><br>
+            <span class="transcript-time">00:00:14</span> <span class="transcript-speaker">Speaker</span><br>
+            So the timeline for the CBUAE submission is what we need to nail down today.<br><br>
+            <span class="transcript-time">00:00:28</span> <span class="transcript-speaker">Speaker</span><br>
+            The central bank pushed their deadline to August. But there's a hard dependency on the KYC module being certified first.<br><br>
+            <span class="transcript-time">00:00:45</span> <span class="transcript-speaker">Speaker</span><br>
+            Right. What's the current status on KYC certification?
+          </div>
+        </div>
+
+        <div style="text-align:center;padding-top:8px;">
+          <button class="btn">Re-analyze</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SCREEN 3: NEW SESSION ===================== -->
+  <div class="screen new-session-screen" id="screen-new-session">
+    <div class="topbar">
+      <span style="cursor:pointer;color:var(--text-secondary);font-size:13px;" onclick="showScreen('screen-dashboard')">← Back</span>
+      <div class="topbar-spacer"></div>
+      <span class="topbar-title">New Session</span>
+      <div class="topbar-spacer"></div>
+    </div>
+    <div class="new-session-body">
+      <div class="new-session-form">
+        <div class="form-group">
+          <label class="form-label">Session name</label>
+          <input class="input" placeholder="e.g. Board Call Q2" value="Board Call Q2">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Labels</label>
+          <div class="label-tags">
+            <span class="label-tag label-kgl">KGL <span class="remove">×</span></span>
+            <span class="label-tag label-board">Board <span class="remove">×</span></span>
+            <button class="add-label">+ add label</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Participants <span style="color:var(--text-tertiary);font-weight:400;">(optional)</span></label>
+          <input class="input" placeholder="e.g. Sarah, Ahmed" value="Sarah, Ahmed">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Context for AI</label>
+          <textarea class="input" rows="5" placeholder="What should the AI know about this call?">Follow-up to Q1 board meeting.
+Discussing CBUAE Phase 2 delays and KYC module timeline. Ahmed owes cost estimates from last call.</textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">AI Features</label>
+          <div class="feature-toggles">
+            <button class="feature-toggle active-amber">F Fact-check</button>
+            <button class="feature-toggle active-blue">C Commitments</button>
+            <button class="feature-toggle">S Suggestions</button>
+            <button class="feature-toggle active-purple">Q Q&A</button>
+          </div>
+        </div>
+        <div class="start-btn-container">
+          <button class="btn-start" onclick="showScreen('screen-live')">▶ Start Session</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SCREEN 4: LIVE SESSION ===================== -->
+  <div class="screen live-screen" id="screen-live">
+    <div class="live-topbar">
+      <div class="rec-dot"></div>
+      <span class="rec-label">REC</span>
+      <span class="live-session-name">Board Call Q2</span>
+      <div class="topbar-spacer"></div>
+      <span class="live-timer">00:23:15</span>
+      <span class="live-cost">$0.12</span>
+      <button class="btn" style="font-size:11px;">⏸ Pause</button>
+      <button class="btn btn-danger" style="font-size:11px;" onclick="showScreen('screen-post')">⏹ End</button>
+    </div>
+    <div class="live-body">
+      <!-- Transcript -->
+      <div class="transcript-panel">
+        <div class="transcript-entry">
+          <div class="transcript-entry-header">
+            <span class="t-time">00:01:22</span>
+            <span class="t-speaker">Speaker</span>
+          </div>
+          <div class="t-text">So the timeline for the CBUAE submission is what we need to nail down today.</div>
+        </div>
+        <div class="transcript-entry">
+          <div class="transcript-entry-header">
+            <span class="t-time">00:01:35</span>
+            <span class="t-speaker">Speaker</span>
+          </div>
+          <div class="t-text">The central bank pushed their deadline to August. But there's a hard dependency on the KYC module being certified first.</div>
+        </div>
+        <div class="transcript-entry">
+          <div class="transcript-entry-header">
+            <span class="t-time">00:01:48</span>
+            <span class="t-speaker">Speaker</span>
+          </div>
+          <div class="t-text">Right. What's the current status on KYC certification?</div>
+        </div>
+        <div class="transcript-entry">
+          <div class="transcript-entry-header">
+            <span class="t-time">00:01:53</span>
+            <span class="t-speaker">Speaker</span>
+          </div>
+          <div class="t-text">We submitted to the auditor last week. Expecting results by April 15th.</div>
+        </div>
+        <div class="transcript-entry">
+          <div class="transcript-entry-header">
+            <span class="t-time">00:02:10</span>
+            <span class="t-speaker">Speaker</span>
+          </div>
+          <div class="t-text">Good. And the cost estimates for Phase 2, Ahmed, did you get those finalized?</div>
+        </div>
+        <div class="transcript-entry">
+          <div class="transcript-entry-header">
+            <span class="t-time">00:02:22</span>
+            <span class="t-speaker">Speaker</span>
+          </div>
+          <div class="t-text">Still working through the vendor quotes. Should have final numbers by end of this week.</div>
+        </div>
+        <div class="transcript-entry">
+          <div class="transcript-entry-header">
+            <span class="t-time">00:02:35</span>
+            <span class="t-speaker">Speaker</span>
+          </div>
+          <div class="t-text">Let's make sure we loop in finance before we commit to anything. The Q3 budget revision depends on those numbers.</div>
+        </div>
+      </div>
+
+      <div class="panel-divider"></div>
+
+      <!-- AI Panel -->
+      <div class="ai-panel">
+        <div class="ai-panel-header">
+          <span class="ai-panel-title">AI Panel</span>
+          <div class="ai-toggles">
+            <button class="ai-toggle-pill on-amber">F</button>
+            <button class="ai-toggle-pill on-blue">C</button>
+            <button class="ai-toggle-pill" style="color:var(--text-tertiary);">S</button>
+            <button class="ai-toggle-pill on-purple">Q</button>
+          </div>
+        </div>
+        <div class="ai-feed">
+          <div class="ai-finding unanswered">
+            <div class="ai-finding-header">
+              ❓ Unanswered <span class="ai-finding-ref" style="margin-left:auto;">00:02:10</span>
+            </div>
+            <div class="ai-finding-body">
+              Cost estimates for Phase 2: question posed, Ahmed responded with "end of this week." Monitor for follow-up.
+            </div>
+          </div>
+          <div class="ai-finding commitment">
+            <div class="ai-finding-header">
+              📌 Commitment <span class="ai-finding-ref" style="margin-left:auto;">00:01:53</span>
+            </div>
+            <div class="ai-finding-body">
+              "Expecting audit results by April 15th"<br>
+              → Who: auditor/Ahmed &nbsp;→ Deadline: Apr 15
+            </div>
+            <div class="ai-finding-actions">
+              <button class="btn" style="font-size:10px;padding:3px 10px;">+ Save</button>
+            </div>
+          </div>
+          <div class="ai-finding fact-check">
+            <div class="ai-finding-header">
+              ⚠ Fact-check <span class="ai-finding-ref" style="margin-left:auto;">00:01:35</span>
+            </div>
+            <div class="ai-finding-body">
+              Claim: "end of Q2" for CBUAE deadline.<br>
+              Context says CBUAE Phase 2 deadline is Aug 2026 per Central Bank circular CB-2025-041. This is end of Q3, not Q2.
+            </div>
+          </div>
+        </div>
+        <div class="ai-ask-bar">
+          <input class="ai-ask-input" placeholder="Ask AI about this call...">
+          <button class="ai-ask-send">→</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SCREEN 5: POST-PROCESSING ===================== -->
+  <div class="screen post-screen" id="screen-post">
+    <div class="topbar">
+      <span class="topbar-title">Post-Analysis</span>
+      <div class="topbar-spacer"></div>
+    </div>
+    <div class="post-body">
+      <div class="post-container">
+        <div class="post-header">
+          <div class="post-title">Board Call Q2</div>
+          <div class="post-meta">
+            <span>Mar 28, 2026</span>
+            <span>47 min</span>
+            <span>$0.85</span>
+          </div>
+        </div>
+
+        <div class="post-section">
+          <div class="post-section-header">
+            <div class="section-label">Summary</div>
+            <button class="btn" style="font-size:10px;padding:3px 10px;">Regen</button>
+          </div>
+          <div class="post-summary">
+            Discussed CBUAE Phase 2 timeline. Central bank extended deadline to Aug 2026. KYC module certification is the critical dependency. Ahmed expects auditor results by Apr 15. Budget revision needed for Q3 planning.
+          </div>
+        </div>
+
+        <div class="post-section">
+          <div class="post-section-header">
+            <div class="section-label">Actions</div>
+          </div>
+
+          <div class="post-action-item">
+            <div class="post-action-top">
+              <div class="post-action-check">✓</div>
+              <div class="post-action-title">Send CBUAE Phase 2 timeline to board</div>
+              <button class="post-action-delete">×</button>
+            </div>
+            <div class="post-action-fields">
+              <div class="mini-field">Owner: <select class="mini-select"><option>Me</option><option>Ahmed</option><option>Sarah</option></select></div>
+              <div class="mini-field">Due: <input class="mini-input" type="text" value="Apr 5" style="width:70px;"></div>
+            </div>
+            <div class="post-action-quote">"I'll circulate the updated timeline to the board by Friday"</div>
+          </div>
+
+          <div class="post-action-item">
+            <div class="post-action-top">
+              <div class="post-action-check">✓</div>
+              <div class="post-action-title">Deliver KYC audit results</div>
+              <button class="post-action-delete">×</button>
+            </div>
+            <div class="post-action-fields">
+              <div class="mini-field">Owner: <select class="mini-select"><option>Ahmed</option><option>Me</option><option>Sarah</option></select></div>
+              <div class="mini-field">Due: <input class="mini-input" type="text" value="Apr 15" style="width:70px;"></div>
+            </div>
+            <div class="post-action-quote">"Expecting results by April 15th"</div>
+          </div>
+
+          <div class="post-action-item">
+            <div class="post-action-top">
+              <div class="post-action-check">✓</div>
+              <div class="post-action-title">Prepare budget revision for Q3</div>
+              <button class="post-action-delete">×</button>
+            </div>
+            <div class="post-action-fields">
+              <div class="mini-field">Owner: <select class="mini-select"><option>Me</option><option>Ahmed</option><option>Sarah</option></select></div>
+              <div class="mini-field">Due: <input class="mini-input" type="text" value="Apr 10" style="width:70px;"></div>
+            </div>
+            <div class="post-action-quote">"Let's get the revised numbers together before the next board"</div>
+          </div>
+
+          <div class="post-action-item ai-suggestion">
+            <div class="post-action-top">
+              <div class="post-action-check unchecked">✓</div>
+              <div class="post-action-title" style="color:var(--text-secondary);">Share updated risk assessment</div>
+              <button class="post-action-delete">×</button>
+            </div>
+            <div class="post-action-fields">
+              <div class="mini-field">Owner: <select class="mini-select"><option>Sarah</option><option>Me</option><option>Ahmed</option></select></div>
+              <div class="mini-field">Due: <input class="mini-input" type="text" value="" style="width:70px;" placeholder="Set date"></div>
+            </div>
+            <div class="ai-suggestion-note">AI suggestion, not a clear commitment. Uncheck to discard.</div>
+          </div>
+
+          <button class="btn" style="margin-top:8px;font-size:11px;">+ Add action manually</button>
+        </div>
+
+        <div class="post-section">
+          <div class="post-section-header">
+            <div class="section-label">Decisions</div>
+          </div>
+          <ul class="decisions-list">
+            <li>Phase 2 deadline moved to Aug 2026</li>
+            <li>Will proceed with current KYC vendor</li>
+            <li>Q3 budget revision triggered</li>
+          </ul>
+        </div>
+
+        <div class="post-footer">
+          <button class="btn">Back to Transcript</button>
+          <button class="btn btn-primary btn-lg" onclick="showScreen('screen-dashboard')">Save & Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SCREEN 6: SETTINGS ===================== -->
+  <div class="screen settings-screen" id="screen-settings">
+    <div class="topbar">
+      <span style="cursor:pointer;color:var(--text-secondary);font-size:13px;" onclick="showScreen('screen-dashboard')">← Dashboard</span>
+      <div class="topbar-spacer"></div>
+      <span class="topbar-title">Settings</span>
+      <div class="topbar-spacer"></div>
+    </div>
+    <div class="settings-body">
+      <div class="settings-container">
+
+        <div class="settings-section">
+          <div class="settings-section-title">API Configuration</div>
+          <div class="settings-field">
+            <div class="settings-field-label">Claude API Key</div>
+            <div class="masked-input-row">
+              <input class="input" type="password" value="sk-ant-api03-xxxxxxxxxxxxxxxxxxxx" style="font-family:var(--font-mono);">
+              <button class="icon-btn">👁</button>
+              <button class="btn" style="font-size:11px;">Test</button>
+            </div>
+            <div class="status-ok" style="margin-top:6px;">✓ Connected</div>
+          </div>
+        </div>
+
+        <hr class="divider">
+
+        <div class="settings-section">
+          <div class="settings-section-title">Audio</div>
+          <div class="settings-field">
+            <div class="settings-field-label">Capture Device</div>
+            <select class="input" style="cursor:pointer;">
+              <option>Call Assistant (BlackHole 2ch)</option>
+              <option>MacBook Pro Speakers</option>
+            </select>
+          </div>
+        </div>
+
+        <hr class="divider">
+
+        <div class="settings-section">
+          <div class="settings-section-title">Transcription</div>
+          <div class="settings-field">
+            <div class="settings-field-label">Whisper Model</div>
+            <div class="model-options">
+              <div class="model-option">
+                <div class="model-radio"></div>
+                <span class="model-name">Base</span>
+                <span class="model-desc">Fastest, lower accuracy</span>
+              </div>
+              <div class="model-option selected">
+                <div class="model-radio"></div>
+                <span class="model-name">Small</span>
+                <span class="model-desc">Balanced (recommended)</span>
+              </div>
+              <div class="model-option">
+                <div class="model-radio"></div>
+                <span class="model-name">Medium</span>
+                <span class="model-desc">Slower, higher accuracy</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <hr class="divider">
+
+        <div class="settings-section">
+          <div class="settings-section-title">AI Defaults</div>
+          <div class="settings-field">
+            <div class="settings-field-label">Default features for new sessions</div>
+            <div class="feature-toggles" style="margin-top:6px;">
+              <button class="feature-toggle active-amber">F Fact-check</button>
+              <button class="feature-toggle active-blue">C Commitments</button>
+              <button class="feature-toggle">S Suggestions</button>
+              <button class="feature-toggle active-purple">Q Q&A</button>
+            </div>
+          </div>
+        </div>
+
+        <hr class="divider">
+
+        <div class="settings-section">
+          <div class="settings-section-title">Storage</div>
+          <div class="settings-field">
+            <div class="settings-field-label">Data location</div>
+            <div class="storage-path">
+              <span>~/Library/Application Support/CallAssistant</span>
+              <button class="btn" style="font-size:11px;">Open in Finder</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Prototype Navigation -->
+<div class="proto-nav">
+  <button class="active" onclick="showScreen('screen-setup')">1. Setup</button>
+  <button onclick="showScreen('screen-dashboard')">2. Dashboard</button>
+  <button onclick="showScreen('screen-new-session')">3. New Session</button>
+  <button onclick="showScreen('screen-live')">4. Live Session</button>
+  <button onclick="showScreen('screen-post')">5. Post-Analysis</button>
+  <button onclick="showScreen('screen-settings')">6. Settings</button>
+</div>
+
+<script>
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+
+  const labels = {
+    'screen-setup': '1. Setup',
+    'screen-dashboard': '2. Dashboard',
+    'screen-new-session': '3. New Session',
+    'screen-live': '4. Live Session',
+    'screen-post': '5. Post-Analysis',
+    'screen-settings': '6. Settings'
+  };
+
+  document.querySelectorAll('.proto-nav button').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent === labels[id]);
+  });
+}
+
+// Make session rows clickable (visual only)
+document.querySelectorAll('.session-row').forEach(row => {
+  row.addEventListener('click', () => {
+    document.querySelectorAll('.session-row').forEach(r => r.classList.remove('selected'));
+    row.classList.add('selected');
+  });
+});
+
+// Toggle feature buttons
+document.querySelectorAll('.feature-toggle').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const classes = ['active-amber','active-blue','active-green','active-purple'];
+    const hasActive = classes.some(c => btn.classList.contains(c));
+    if (hasActive) {
+      classes.forEach(c => btn.classList.remove(c));
+    } else {
+      const letter = btn.textContent.trim()[0];
+      const colorMap = { F: 'active-amber', C: 'active-blue', S: 'active-green', Q: 'active-purple' };
+      if (colorMap[letter]) btn.classList.add(colorMap[letter]);
+    }
+  });
+});
+
+// Toggle AI pills
+document.querySelectorAll('.ai-toggle-pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const classes = ['on-amber','on-blue','on-green','on-purple'];
+    const hasOn = classes.some(c => btn.classList.contains(c));
+    if (hasOn) {
+      classes.forEach(c => btn.classList.remove(c));
+      btn.style.color = 'var(--text-tertiary)';
+    } else {
+      const letter = btn.textContent.trim();
+      const colorMap = { F: 'on-amber', C: 'on-blue', S: 'on-green', Q: 'on-purple' };
+      if (colorMap[letter]) { btn.classList.add(colorMap[letter]); btn.style.color = ''; }
+    }
+  });
+});
+
+// Model option selection
+document.querySelectorAll('.model-options').forEach(group => {
+  group.querySelectorAll('.model-option').forEach(opt => {
+    opt.addEventListener('click', () => {
+      group.querySelectorAll('.model-option').forEach(o => o.classList.remove('selected'));
+      opt.classList.add('selected');
+    });
+  });
+});
+</script>
+
+</body>
+</html>
