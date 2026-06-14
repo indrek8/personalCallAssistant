@@ -13,8 +13,9 @@ use crate::error::{AppError, AppResult};
 /// One audio input device, as returned by `list_audio_input_devices` (§7).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioDevice {
-    /// Stable-ish identifier. cpal exposes no opaque id on macOS, so we use the
-    /// device name (unique enough for the device dropdown in M1).
+    /// Identifier used for selection/persistence. cpal exposes no opaque id on
+    /// macOS, so this is the device name, disambiguated with an occurrence suffix
+    /// when names collide. Stable Core Audio device IDs come in M2.
     pub id: String,
     pub name: String,
     pub is_default: bool,
@@ -36,6 +37,7 @@ pub fn list_input_devices() -> AppResult<Vec<AudioDevice>> {
         .map_err(|e| AppError::Audio(format!("could not enumerate input devices: {e}")))?;
 
     let mut out = Vec::new();
+    let mut seen: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
     for device in devices {
         let name = match device.name() {
             Ok(n) => n,
@@ -45,11 +47,18 @@ pub fn list_input_devices() -> AppResult<Vec<AudioDevice>> {
             .as_deref()
             .map(|d| d == name)
             .unwrap_or(false);
-        out.push(AudioDevice {
-            id: name.clone(),
-            name,
-            is_default,
-        });
+        // cpal exposes no opaque id on macOS, so the id is the device name —
+        // disambiguated with an occurrence suffix when names repeat (e.g. two
+        // identical USB mics) so the id stays unique for selection/persistence.
+        // Stable Core Audio device IDs arrive in M2 when we open the device.
+        let count = seen.entry(name.clone()).or_insert(0);
+        *count += 1;
+        let id = if *count == 1 {
+            name.clone()
+        } else {
+            format!("{name} #{count}")
+        };
+        out.push(AudioDevice { id, name, is_default });
     }
 
     Ok(out)

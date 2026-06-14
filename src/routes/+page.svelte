@@ -23,13 +23,6 @@
 </script>
 
 <div class="app">
-  <div class="titlebar">
-    <div class="lights">
-      <span class="light l-c"></span><span class="light l-m"></span><span class="light l-x"></span>
-    </div>
-    <div class="tb-title"><b>Call&nbsp;Assistant</b></div>
-  </div>
-
   {#if $banner}
     <div class="banner">
       <span>{$banner}</span>

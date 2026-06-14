@@ -5,15 +5,20 @@ edition = "2021"
 publish = false
 description = "M0 de-risking spikes (throwaway) for the Personal Call Assistant: Whisper STT speed, dual-audio capture, and Claude API calls."
 
-# Three standalone binaries, one per spike. Each is built/run independently:
-#   cargo run --bin s1_whisper -- <path-to-16k-mono.wav>
+# Four standalone binaries, one per spike. Each is built/run independently:
+#   cargo run --release --bin s1_whisper -- <path-to-16k-mono.wav>
+#   cargo run --release --bin s2_concurrent_whisper -- <path-to-16k-mono.wav>
 #   cargo run --bin s3_dual_audio
 #   cargo run --bin s4_claude
-# See each spike's RUN.md and the top-level README.md.
+# See each spike's RUN doc and the top-level README.md.
 
 [[bin]]
 name = "s1_whisper"
 path = "src/bin/s1_whisper.rs"
+
+[[bin]]
+name = "s2_concurrent_whisper"
+path = "src/bin/s2_concurrent_whisper.rs"
 
 [[bin]]
 name = "s3_dual_audio"

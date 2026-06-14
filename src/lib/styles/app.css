@@ -65,18 +65,6 @@ body::after{
   background:var(--bg-1);
   display:flex; flex-direction:column; overflow:hidden;
 }
-.titlebar{
-  height:42px; flex:none; display:flex; align-items:center; gap:8px;
-  padding:0 16px; border-bottom:1px solid var(--line-soft);
-  background:linear-gradient(180deg,rgba(255,255,255,.022),transparent);
-  position:relative; z-index:5;
-}
-.lights{display:flex; gap:8px}
-.light{width:12px;height:12px;border-radius:50%}
-.l-c{background:#FF5F57} .l-m{background:#FEBC2E} .l-x{background:#28C840}
-.tb-title{position:absolute; left:0; right:0; text-align:center; font-size:12px; color:var(--ink-3); letter-spacing:.02em; pointer-events:none}
-.tb-title b{color:var(--ink-2); font-weight:600}
-
 /* brand mark */
 .mark{width:23px;height:23px;flex:none;border-radius:7px;background:linear-gradient(150deg,#2A2418,#1A1610);border:1px solid var(--gold-line);display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px -4px var(--gold-soft)}
 .mark span{display:flex;align-items:flex-end;gap:1.5px;height:11px}

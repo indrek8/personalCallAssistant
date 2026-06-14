@@ -27,7 +27,7 @@ Key technical decisions made in these docs (revisit consciously, not by accident
 
 | # | Decision | Rationale | Status |
 |---|---|---|---|
-| D1 | **2-stream You/Remote audio** — Multi-Output Device for remote + direct mic | Free speaker attribution without diarization | **Pending M0/S2–S3 validation**; fallback = mixed mono + generic "Speaker" |
+| D1 | **2-stream You/Remote audio** — Multi-Output Device for remote + direct mic | Free speaker attribution without diarization | **Validated — M0 S1+S2 passed:** whisper `small` RTF ~0.04 single / ~0.03 concurrent ×2 (~25× realtime headroom). S3 hardware capture run still pending. |
 | D2 | **No virtual mic in MVP** — passive listening only | Meeting app keeps using the real mic; virtual-mic proxy is a v1/HAL concern | Locked |
 | D3 | Incremental, atomic writes (temp→fsync→rename) | Crash safety; recovery | Locked |
 | D4 | VAD segmentation with a hard-max length | Avoids mid-word slicing and unbounded waits | Locked |

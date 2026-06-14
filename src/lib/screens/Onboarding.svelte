@@ -13,7 +13,7 @@
   let model = $state("small");
   let saving = $state(false);
 
-  const STEPS = ["Welcome", "Connect Claude", "Audio device", "Transcription model"];
+  const STEPS = ["Connect Claude", "Audio device", "Transcription model", "All set"];
 
   const WAVE = [20, 38, 52, 30, 46, 58, 34, 44, 24, 40, 54, 28, 48, 36, 22];
   const MODELS: { id: string; name: string; desc: string }[] = [
@@ -85,8 +85,8 @@
       </div>
       <div class="ob-steps-mini">
         {#each STEPS as label, i}
-          <div class="osm" class:done={step > i} class:cur={step === i}>
-            <span class="n">{step > i ? "✓" : i + 1}</span>{label}
+          <div class="osm" class:done={step > i + 1} class:cur={step === i + 1}>
+            <span class="n">{step > i + 1 ? "✓" : i + 1}</span>{label}
           </div>
         {/each}
       </div>
