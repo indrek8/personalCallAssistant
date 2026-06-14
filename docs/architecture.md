@@ -1,6 +1,6 @@
 # Architecture
 
-> Shared technical reference for both horizons. Each section notes what the **MVP** does now vs. the **[Version 1](vision.md)** target. The build sequence that moves us from one to the other is in **[roadmap.md](roadmap.md)**.
+> Shared technical reference for both horizons. Each section notes what the **MVP** does now vs. the **[Version 1](vision.md)** target. Implementation-grade detail — flows, the Tauri IPC contract, schemas, milestones — lives in **[build/](build/)**; the path from MVP to v1 is in **[roadmap.md](roadmap.md)**.
 
 ---
 
@@ -10,9 +10,9 @@
 |---|---|---|
 | App framework | **Tauri v2** (Rust backend + web frontend) | same |
 | Frontend | **Svelte + TypeScript** | same |
-| Audio device | **BlackHole fork** ("Call Assistant"), manual aggregate-device setup | **Custom HAL plugin** (`.driver`), zero manual setup |
+| Audio capture | **BlackHole fork** ("Call Assistant") — passive 2-stream (Multi-Output for remote + direct mic), no virtual mic | **Custom HAL plugin** (`.driver`), full proxy, zero manual setup |
 | Audio capture | Rust with `cpal` | Rust with `cpal` / Core Audio |
-| Local STT | `whisper-rs` (whisper.cpp), `base`/`small` model | `whisper-rs`, `medium`/`large-v3` + diarization |
+| Local STT | `whisper-rs` (whisper.cpp), `base`/`small`; **You/Remote** from 2 streams | `whisper-rs`, `medium`/`large-v3` + per-speaker diarization |
 | AI | Claude API — **Haiku** (live) + **Sonnet** (chat & post-analysis) | same, plus templates & budget caps |
 | Storage | Flat files (JSON + WAV) | Files + **SQLite** for query/search |
 | IPC | Tauri command/event system | + shared-memory ring buffer (plugin ↔ app) |
@@ -43,11 +43,12 @@
 │  └──────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────┘
 
-Audio flow (MVP):
-  Real Mic ─> BlackHole ─> cpal capture ─> WAV file
-                              │
-                              └─> Whisper ─> Transcript ─> AI Pipeline ─> Claude API
-  Meeting App <─> BlackHole (virtual device)
+Audio flow (MVP) — two passive streams, no virtual mic:
+  Real mic ───────────────────────► cpal ──┐ "you"
+  Meeting app ─► Multi-Output ─► BlackHole ─► cpal ──┤ "remote"
+                    └─► your headphones (you hear it) │
+                                                       ▼
+                        16kHz mono ─► WAV + Whisper ─► Transcript ─► AI ─► Claude API
 ```
 
 The app runs two UI modes: **dashboard** (split-pane, like Apple Mail) for browsing, and **session** (full-screen takeover) for live recording and post-processing. The Rust backend runs audio capture, the Whisper pipeline, and the AI pipeline on dedicated threads, streaming results to the frontend via Tauri events.
@@ -56,7 +57,7 @@ The app runs two UI modes: **dashboard** (split-pane, like Apple Mail) for brows
 
 ## Layer 1: Audio Proxy (Virtual Audio Device)
 
-The app sits transparently between the meeting app and real hardware. The user selects "Call Assistant" as their mic/speaker in the meeting app **once**; from then on we control which real hardware is used and tee every stream to Whisper.
+**The Version 1 target** sits transparently between the meeting app and real hardware: the user selects "Call Assistant" as their mic/speaker in the meeting app **once**, and from then on we own the routing and tee every stream to Whisper. The diagram below is that v1 picture — the **MVP reaches the same transcript more simply, by passive capture** (see the MVP subsection).
 
 ```
 YOUR VOICE:
@@ -69,13 +70,14 @@ Meeting App ──> Virtual Speaker ──> Our App ──> Real Speaker
                                        └──> Whisper Pipeline
 ```
 
-### MVP: BlackHole fork
+### MVP: BlackHole fork — passive 2-stream capture
 
-Fork BlackHole, rebrand as "Call Assistant":
-- Device name → "Call Assistant"; bundle ID → `com.callassistant.audio.driver`
-- Build a 2-channel (stereo) version; ship build instructions / installer script
+The MVP doesn't proxy the mic at all — it **listens passively** to both sides, so no virtual mic is needed:
+- **Your voice** → captured directly from the real microphone (the meeting app keeps using it too).
+- **Remote voices** → the meeting app's output runs through a **Multi-Output Device** (BlackHole + your headphones) so you still hear it *and* it lands in BlackHole, which we capture.
+- Two known streams ⇒ **free "You" / "Remote" labels — no diarization.**
 
-**One-time user setup (MVP):** install the driver → create an aggregate device in Audio MIDI Setup combining the real mic + Call Assistant → select "Call Assistant" in the meeting app.
+Fork BlackHole, rebrand as "Call Assistant" (device name + bundle id `com.callassistant.audio.driver`), 2-channel. **One-time setup:** install it, create the Multi-Output Device, and point the meeting app's speaker at it. Use **headphones** — open speakers let the mic re-capture the remote side (echo). Full mechanics: [build/technical-design.md §4](build/technical-design.md).
 
 ### Version 1: Custom HAL Audio Plugin
 
@@ -102,9 +104,9 @@ No phantom devices when the app isn't running; a crash mid-call behaves like unp
 - `whisper-rs` (whisper.cpp) on Apple Silicon
 - **MVP:** `base`/`small` model — fast enough for near-real-time
 - Chunked processing (~5–10s segments) with Voice Activity Detection to skip silence
-- Outputs transcript entries `{ timestamp, text, confidence }`, emitted to the frontend via Tauri event **and** fed to the AI pipeline
-- **MVP:** no speaker diarization — all text attributed to a generic "Speaker"
-- **v1:** `medium`/`large-v3` for post-analysis quality + speaker diarization
+- Outputs transcript entries `{ t, stream: "you"|"remote", text, confidence }`, emitted to the frontend via Tauri event **and** fed to the AI pipeline
+- **MVP:** speaker attribution is **"You" vs "Remote"** for free (the two capture streams are known) — no diarization needed
+- **v1:** `medium`/`large-v3` for post-analysis quality + diarization that splits the Remote stream into individual speakers
 
 > ⚠ **Biggest technical unknown:** whether `whisper-rs` builds and runs fast enough on the target Mac. De-risk with a standalone spike before building the pipeline — see [mvp.md → Step 1](mvp.md#step-1-walking-skeleton).
 
@@ -164,8 +166,8 @@ Transcript chunks are sent to Claude based on the active toggles. All calls are 
 └── sessions/
     └── {session-id}/
         ├── metadata.json         # name, labels[], status, date, duration, participants, context_notes
-        ├── audio.wav             # raw captured audio
-        ├── transcript.json       # [{ timestamp, speaker, text, confidence }]
+        ├── audio.wav             # stereo 16-bit: L=you, R=remote
+        ├── transcript.json       # [{ t, stream: you|remote, text, confidence }]
         ├── ai_live.json          # live AI call logs (requests, responses, cost)
         ├── analysis.json         # post-session output (summary, actions, decisions)
         └── chat.json             # user Q&A log

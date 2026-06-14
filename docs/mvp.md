@@ -18,8 +18,8 @@ Full stack + rationale: [architecture.md](architecture.md).
 ## Scope
 
 **In:**
-- BlackHole fork ("Call Assistant") for audio capture (manual one-time setup)
-- Local Whisper transcription (generic "Speaker" labels, no diarization)
+- BlackHole fork ("Call Assistant") — passive 2-stream capture (Multi-Output for remote + direct mic), manual one-time setup
+- Local Whisper transcription with **"You" / "Remote"** labels (free from the two streams; no diarization)
 - Live AI panel with F / C / S / Q toggles (Haiku)
 - "Ask AI" chat during the call (Sonnet)
 - Post-session analysis: summary + extracted actions + decisions, reviewed before save (Sonnet)
@@ -43,9 +43,11 @@ Two modes: **dashboard** (browsing) and **session** (full-screen takeover). Full
 
 ## Implementation Order
 
+> **Implementation-grade build plan:** the steps below are the summary. The detailed, workable plan — every flow, exception, the Tauri IPC contract, data schemas, and milestone task checklists — lives in **[build/](build/)** ([flows](build/flows.md) · [technical-design](build/technical-design.md) · [milestones](build/milestones.md)).
+
 ### Step 1: Walking Skeleton
 
-**Start here.** The goal of Step 1 is a **running app that proves the whole stack is wired together** — frontend ↔ Rust ↔ filesystem ↔ system audio — before building any real features on top. No Whisper, no Claude, no audio capture yet. Just a tracer bullet through every layer.
+**The first build milestone** (the M0 de-risking spikes in [build/milestones.md](build/milestones.md) come first). Step 1 is a **running app that proves the whole stack is wired together** — frontend ↔ Rust ↔ filesystem ↔ system audio — before building any real features on top. No Whisper, no Claude, no audio capture yet. Just a tracer bullet through every layer.
 
 **Build:**
 1. **Scaffold** a Tauri v2 project with the Svelte + TypeScript template (`npm create tauri-app@latest`, choose Svelte + TS).
@@ -67,7 +69,7 @@ Two modes: **dashboard** (browsing) and **session** (full-screen takeover). Full
 
 ### Step 2: Audio Capture
 - BlackHole fork: rename, build, document the one-time setup
-- `cpal` integration: capture from the "Call Assistant" device
+- `cpal` integration: dual-stream capture (real mic = "you", BlackHole = "remote")
 - WAV file writing on a background thread (for playback later)
 - Start / stop / pause controls wired to the frontend
 

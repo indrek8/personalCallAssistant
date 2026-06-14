@@ -25,7 +25,7 @@ The end-to-end flow works: capture → live transcript → live AI → post-anal
 
 - **Session playback** — audio synced with transcript scroll, bookmark/action markers on a timeline
 - **"Prepare for Next Call"** — AI briefing of open items + suggested talking points, fed into the next session's context
-- **Speaker diarization** — replace the generic "Speaker" label
+- **Speaker diarization** — split the "Remote" stream into individual speakers (the MVP already labels You vs Remote)
 - **Session templates** — saved toggle sets + custom extraction prompts
 - **Budget-cap enforcement** — hard stop, not just a cost display
 

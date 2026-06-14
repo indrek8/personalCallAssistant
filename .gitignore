@@ -14,10 +14,10 @@
 .env.*
 *.local
 
-# Node
+# Node / build artifacts (root-level only — anchored so docs/build/ is NOT ignored)
 node_modules/
-dist/
-build/
+/dist/
+/build/
 
 # Python
 __pycache__/
