@@ -21,7 +21,7 @@ M0 Spikes ─► M1 Skeleton ─► M2 Capture→Transcript ─► M3 Live AI �
 - [ ] **S4 · Claude calls.** Minimal `reqwest` call to Haiku + Sonnet with the live + post JSON schemas; confirm parsing and capture token/cost fields.
 
 **Acceptance / decision gate:**
-- Real-time factor for `small` is comfortably < 1.0 (transcribes faster than realtime) → use `small`; else fall back to `base`.
+- Real-time factor for `small` is comfortably < 1.0 (transcribes faster than realtime) → use `small`; else fall back to `base`. **Result (M0/S1): `small` RTF 0.040, `medium` RTF 0.055 — both ~20× realtime, so the MVP defaults to `medium` for accuracy.**
 - ×2 concurrent is sustainable → **lock 2-stream You/Remote**; else fall back to mixed mono + generic "Speaker" (update [technical-design.md](technical-design.md) §4–5).
 - Dual capture works → the audio model in §4 is real.
 

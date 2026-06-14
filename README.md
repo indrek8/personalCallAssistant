@@ -41,7 +41,7 @@ The app itself (Tauri + Svelte + Rust) gets scaffolded at the repo root in MVP S
 | Frontend | **Svelte + TypeScript** |
 | Product shape | **Dashboard + Labels** — flat session list (Apple Mail style), actions scoped to each session |
 | Audio capture | **BlackHole fork** ("Call Assistant") — passive 2-stream (You + Remote), no virtual mic; HAL plugin is a v1 target |
-| Local STT | **whisper-rs** (whisper.cpp), `base` / `small` model |
+| Local STT | **whisper-rs** (whisper.cpp), **`medium`** default (`small` / `base` fallback) |
 | AI | **Claude API** — Haiku for live analysis, Sonnet for chat + post-analysis |
 | Storage | **Flat files** (JSON + WAV) under `~/Library/Application Support/CallAssistant/` |
 

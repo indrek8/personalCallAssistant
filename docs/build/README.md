@@ -31,7 +31,7 @@ Key technical decisions made in these docs (revisit consciously, not by accident
 | D2 | **No virtual mic in MVP** — passive listening only | Meeting app keeps using the real mic; virtual-mic proxy is a v1/HAL concern | Locked |
 | D3 | Incremental, atomic writes (temp→fsync→rename) | Crash safety; recovery | Locked |
 | D4 | VAD segmentation with a hard-max length | Avoids mid-word slicing and unbounded waits | Locked |
-| D5 | Whisper `small` (fallback `base`), downloaded on demand | Real-time on Apple Silicon without bundling large files | Confirm in M0/S1 |
+| D5 | Whisper **`medium`** default (fallback `small`/`base`), downloaded on demand | Best accuracy at negligible cost — medium is real-time too | **Validated (M0/S1):** medium RTF 0.055, small 0.040 — both ~20× realtime |
 | D6 | Haiku (live) / Sonnet (chat + post-analysis) | Cost vs quality split | Locked |
 | D7 | Event-driven frontend, single `mode` store as router | Matches the state machine; no URL routing needed | Locked |
 | D8 | Flat-file storage with normalized IDs | Simple MVP, forward-compatible | Locked |

@@ -10,7 +10,7 @@
   let showKey = $state(false);
   let apiKey = $state("sk-ant-api03-xxxxxxxxxxxxxxxxxxxx");
   let captureDevice = $state("");
-  let model = $state("small");
+  let model = $state("medium");
   let saving = $state(false);
 
   const STEPS = ["Connect Claude", "Audio device", "Transcription model", "All set"];
@@ -18,8 +18,8 @@
   const WAVE = [20, 38, 52, 30, 46, 58, 34, 44, 24, 40, 54, 28, 48, 36, 22];
   const MODELS: { id: string; name: string; desc: string }[] = [
     { id: "base", name: "Base", desc: "Fastest · lower accuracy" },
-    { id: "small", name: "Small", desc: "Balanced · recommended" },
-    { id: "medium", name: "Medium", desc: "Slower · most accurate" },
+    { id: "small", name: "Small", desc: "Balanced · fast" },
+    { id: "medium", name: "Medium", desc: "Best accuracy · recommended" },
   ];
 
   $effect(() => {
@@ -44,7 +44,7 @@
       if (isTauri()) {
         const base: SettingsT = $settings ?? {
           capture_device_id: null,
-          whisper_model: "small",
+          whisper_model: "medium",
           default_toggles: { f: true, c: true, s: false, q: true },
           budget_default: 5,
           storage_path: null,

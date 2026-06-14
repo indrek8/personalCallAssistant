@@ -2,5 +2,9 @@
 # (The repo-root .gitignore already ignores spikes/target/.)
 
 /target/
-/models/          # ggml model blobs fetched by fetch-model.sh (hundreds of MB)
-*.wav             # recorded / generated audio (sample.wav, dual_capture.wav, ...)
+
+# ggml model blobs fetched by fetch-model.sh (142MB–1.4GB) — see models/models.md
+/models/*.bin
+
+# recorded / generated audio (sample.wav, dual_capture.wav, ...)
+*.wav

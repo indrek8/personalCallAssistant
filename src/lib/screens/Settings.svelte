@@ -11,7 +11,7 @@
   // Working copy of settings (falls back to sensible defaults outside Tauri).
   const base: SettingsT = $settings ?? {
     capture_device_id: null,
-    whisper_model: "small",
+    whisper_model: "medium",
     default_toggles: { f: true, c: true, s: false, q: true },
     budget_default: 5,
     storage_path: null,
@@ -30,8 +30,8 @@
 
   const MODELS: { id: string; name: string; desc: string }[] = [
     { id: "base", name: "Base", desc: "Fastest · lower accuracy" },
-    { id: "small", name: "Small", desc: "Balanced · recommended" },
-    { id: "medium", name: "Medium", desc: "Slower · most accurate" },
+    { id: "small", name: "Small", desc: "Balanced · fast" },
+    { id: "medium", name: "Medium", desc: "Best accuracy · recommended" },
   ];
 
   async function persist() {

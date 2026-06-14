@@ -110,7 +110,7 @@ error.rs             # AppError (thiserror) → maps to EXC-* codes
 
 ## 5. STT Subsystem
 
-- **`whisper-rs`** (whisper.cpp), model `base`/`small` (`medium` optional), Metal/Core ML on Apple Silicon.
+- **`whisper-rs`** (whisper.cpp), **`medium`** default (`small`/`base` selectable), Metal/Core ML on Apple Silicon.
 - **VAD segmentation:** energy-based (or `webrtc-vad`) cuts utterances on a silence gap (~600 ms) with a **hard max length** (~12 s) so we never wait forever or slice mid-word.
 - **WhisperWorker:** single dedicated thread; pulls utterances from a bounded queue (both streams interleaved, each tagged). For each: run whisper → `TranscriptEntry`.
 - **Output:** `{ id, t_ms, stream: "you"|"remote", text, confidence }` → append to `transcript.json` (incremental) + emit `transcript-entry`.

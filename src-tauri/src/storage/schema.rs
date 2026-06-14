@@ -66,7 +66,7 @@ impl Default for Settings {
 }
 
 fn default_whisper_model() -> String {
-    "small".to_string()
+    "medium".to_string()
 }
 
 fn default_budget() -> f64 {
