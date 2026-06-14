@@ -110,7 +110,7 @@ error.rs             # AppError (thiserror) → maps to EXC-* codes
 
 ## 5. STT Subsystem
 
-- **`whisper-rs`** (whisper.cpp), model `base`/`small` (`medium` optional), Metal/Core ML on Apple Silicon.
+- **`whisper-rs`** (whisper.cpp), **`medium`** default (`small`/`base` selectable), Metal/Core ML on Apple Silicon.
 - **VAD segmentation:** energy-based (or `webrtc-vad`) cuts utterances on a silence gap (~600 ms) with a **hard max length** (~12 s) so we never wait forever or slice mid-word.
 - **WhisperWorker:** single dedicated thread; pulls utterances from a bounded queue (both streams interleaved, each tagged). For each: run whisper → `TranscriptEntry`.
 - **Output:** `{ id, t_ms, stream: "you"|"remote", text, confidence }` → append to `transcript.json` (incremental) + emit `transcript-entry`.
@@ -235,7 +235,8 @@ sessions/{uuid}/
 
 ## 10. Configuration & Secrets
 
-- **API key** → macOS **Keychain** via the `keyring` crate. Never written to `settings.json` or logs.
+- **API key (shipped app)** → macOS **Keychain** via the `keyring` crate. Never written to `settings.json` or logs.
+- **API key (dev / spikes)** → a gitignored root **`.env`** loaded via `dotenvy` (`.env.example` is the tracked template). The shipped app uses Keychain, not `.env`.
 - **`settings.json`** → `{ capture_device_id, whisper_model, default_toggles, budget_default, storage_path, first_run }`.
 - **Model files** → downloaded on demand to `models/`, checksum-verified.
 

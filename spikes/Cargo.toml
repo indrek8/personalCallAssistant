@@ -1,0 +1,52 @@
+[package]
+name = "spikes"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "M0 de-risking spikes (throwaway) for the Personal Call Assistant: Whisper STT speed, dual-audio capture, and Claude API calls."
+
+# Four standalone binaries, one per spike. Each is built/run independently:
+#   cargo run --release --bin s1_whisper -- <path-to-16k-mono.wav>
+#   cargo run --release --bin s2_concurrent_whisper -- <path-to-16k-mono.wav>
+#   cargo run --bin s3_dual_audio
+#   cargo run --bin s4_claude
+# See each spike's RUN doc and the top-level README.md.
+
+[[bin]]
+name = "s1_whisper"
+path = "src/bin/s1_whisper.rs"
+
+[[bin]]
+name = "s2_concurrent_whisper"
+path = "src/bin/s2_concurrent_whisper.rs"
+
+[[bin]]
+name = "s3_dual_audio"
+path = "src/bin/s3_dual_audio.rs"
+
+[[bin]]
+name = "s4_claude"
+path = "src/bin/s4_claude.rs"
+
+[dependencies]
+# S1 — STT. `metal` uses the Apple-Silicon GPU; building whisper.cpp needs cmake.
+whisper-rs = { version = "0.16", features = ["metal"] }
+
+# S3 — dual audio capture + WAV writing.
+cpal = "0.16"
+hound = "3.5"
+
+# S4 — Claude Messages API over raw HTTP (no official Rust SDK), .env loading.
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dotenvy = "0.15"
+
+[profile.dev]
+# whisper.cpp is unbearably slow without optimization even in dev builds; turn it
+# on for dependencies so the STT spike reflects realistic timings while keeping
+# fast incremental compiles of our own throwaway code.
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

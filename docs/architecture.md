@@ -12,7 +12,7 @@
 | Frontend | **Svelte + TypeScript** | same |
 | Audio capture | **BlackHole fork** ("Call Assistant") — passive 2-stream (Multi-Output for remote + direct mic), no virtual mic | **Custom HAL plugin** (`.driver`), full proxy, zero manual setup |
 | Audio capture | Rust with `cpal` | Rust with `cpal` / Core Audio |
-| Local STT | `whisper-rs` (whisper.cpp), `base`/`small`; **You/Remote** from 2 streams | `whisper-rs`, `medium`/`large-v3` + per-speaker diarization |
+| Local STT | `whisper-rs` (whisper.cpp), **`medium`** default (`small`/`base` fallback); **You/Remote** from 2 streams | `whisper-rs`, `large-v3` + per-speaker diarization |
 | AI | Claude API — **Haiku** (live) + **Sonnet** (chat & post-analysis) | same, plus templates & budget caps |
 | Storage | Flat files (JSON + WAV) | Files + **SQLite** for query/search |
 | IPC | Tauri command/event system | + shared-memory ring buffer (plugin ↔ app) |
@@ -102,7 +102,7 @@ No phantom devices when the app isn't running; a crash mid-call behaves like unp
 ## Layer 2: Local STT (Whisper)
 
 - `whisper-rs` (whisper.cpp) on Apple Silicon
-- **MVP:** `base`/`small` model — fast enough for near-real-time
+- **MVP:** **`medium`** default (`small`/`base` fallback) — all real-time on Apple Silicon (medium RTF ~0.055, validated in M0/S1)
 - Chunked processing (~5–10s segments) with Voice Activity Detection to skip silence
 - Outputs transcript entries `{ t, stream: "you"|"remote", text, confidence }`, emitted to the frontend via Tauri event **and** fed to the AI pipeline
 - **MVP:** speaker attribution is **"You" vs "Remote"** for free (the two capture streams are known) — no diarization needed

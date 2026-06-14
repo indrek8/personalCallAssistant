@@ -1,0 +1,10 @@
+# Throwaway artifacts of the M0 spikes — none of this should be committed.
+# (The repo-root .gitignore already ignores spikes/target/.)
+
+/target/
+
+# ggml model blobs fetched by fetch-model.sh (142MB–1.4GB) — see models/models.md
+/models/*.bin
+
+# recorded / generated audio (sample.wav, dual_capture.wav, ...)
+*.wav

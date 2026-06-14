@@ -74,7 +74,7 @@ Two modes: **dashboard** (browsing) and **session** (full-screen takeover). Full
 - Start / stop / pause controls wired to the frontend
 
 ### Step 3: Whisper Pipeline
-- `whisper-rs` integration with `base`/`small` model
+- `whisper-rs` integration, **`medium`** default (`small`/`base` selectable)
 - Chunked processing (~5–10s) on a background thread, with VAD to skip silence
 - Transcript entries streamed to the frontend via Tauri events
 - Live transcript display in Svelte (auto-scrolling)

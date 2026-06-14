@@ -1,0 +1,141 @@
+/* ============================================================================
+   Warm Ink Studio — global tokens + shared component styles
+   Ported verbatim from design/prototype.html (the visual language of record).
+   Per-component styles live in each .svelte file; this file holds only the
+   design tokens, base reset, and the genuinely shared primitives.
+   ========================================================================== */
+
+/* ============================ TOKENS ============================ */
+:root{
+  --bg-0:#0E0D0B;     /* deepest warm ink (page) */
+  --bg-1:#141210;     /* window base */
+  --bg-2:#1A1714;     /* surface */
+  --bg-3:#211D18;     /* elevated */
+  --bg-hover:#272219;
+  --bg-sel:#2A2114;   /* selected (warm gold-tinted) */
+  --line:#2F2A22;     /* hairline */
+  --line-soft:#241F19;
+  --ink:#F4EFE6;      /* primary, warm paper */
+  --ink-2:#B7AE9E;    /* secondary */
+  --ink-3:#827969;    /* tertiary */
+  --ink-4:#574F44;    /* faint */
+  --gold:#E7B24C;     /* brand / signature */
+  --gold-2:#F4C766;
+  --gold-soft:rgba(231,178,76,.13);
+  --gold-line:rgba(231,178,76,.32);
+  --rec:#FF4D3E;      /* live recording */
+  --rec-soft:rgba(255,77,62,.14);
+  --fact:#F0A640;     /* AI: fact-check */
+  --commit:#54C5DE;   /* AI: commitment */
+  --suggest:#8AC479;  /* AI: suggestion */
+  --ask:#B295E8;      /* AI: unanswered Q */
+  --done:#8AC479;
+  --pend:#E7B24C;
+  --late:#FF6B5C;
+  --f-disp:'Fraunces',Georgia,serif;
+  --f-ui:'Hanken Grotesk',-apple-system,sans-serif;
+  --f-mono:'JetBrains Mono','SF Mono',monospace;
+  --r-s:7px; --r-m:11px; --r-l:16px;
+  --ease:cubic-bezier(.22,.61,.36,1);
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:14px}
+body{
+  font-family:var(--f-ui);
+  background:
+    radial-gradient(1200px 700px at 70% -10%, rgba(231,178,76,.06), transparent 60%),
+    radial-gradient(900px 600px at 10% 110%, rgba(255,77,62,.045), transparent 55%),
+    var(--bg-0);
+  color:var(--ink);
+  min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+  letter-spacing:-.006em;
+}
+
+/* film grain overlay */
+body::after{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:9999; opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ============================ APP SHELL ============================ */
+.app{
+  position:fixed; inset:0;
+  background:var(--bg-1);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+/* brand mark */
+.mark{width:23px;height:23px;flex:none;border-radius:7px;background:linear-gradient(150deg,#2A2418,#1A1610);border:1px solid var(--gold-line);display:flex;align-items:center;justify-content:center;box-shadow:0 0 16px -4px var(--gold-soft)}
+.mark span{display:flex;align-items:flex-end;gap:1.5px;height:11px}
+.mark span i{width:2px;background:var(--gold);border-radius:1px;display:block}
+.mark span i:nth-child(1){height:4px} .mark span i:nth-child(2){height:9px}
+.mark span i:nth-child(3){height:6px} .mark span i:nth-child(4){height:11px} .mark span i:nth-child(5){height:5px}
+
+/* ============================ SCREENS ============================ */
+.stage{flex:1; position:relative; overflow:hidden}
+.screen{position:absolute; inset:0; display:flex; flex-direction:column; overflow:hidden}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.rise{animation:rise .55s var(--ease) both}
+.rise.r1{animation-delay:.02s}
+.rise.r2{animation-delay:.07s}
+.rise.r3{animation-delay:.12s}
+.rise.r4{animation-delay:.17s}
+
+/* generic helpers */
+.mono{font-family:var(--f-mono)}
+.eyebrow{font-family:var(--f-mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3)}
+.divider{height:1px;background:var(--line-soft);border:0}
+.spacer{flex:1}
+
+/* buttons */
+.btn{font-family:var(--f-ui);font-weight:600;font-size:13px;border:1px solid var(--line);background:var(--bg-3);color:var(--ink);padding:8px 15px;border-radius:var(--r-s);cursor:pointer;transition:.18s var(--ease);display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.btn:hover{background:var(--bg-hover);border-color:#3C362C}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-gold{background:linear-gradient(180deg,var(--gold-2),var(--gold));color:#27200C;border-color:transparent;box-shadow:0 4px 16px -6px rgba(231,178,76,.6),inset 0 1px 0 rgba(255,255,255,.4)}
+.btn-gold:hover{filter:brightness(1.06);background:linear-gradient(180deg,var(--gold-2),var(--gold))}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--ink-2)}
+.btn-ghost:hover{background:var(--bg-2);color:var(--ink)}
+.btn-rec{background:var(--rec-soft);border:1px solid rgba(255,77,62,.4);color:#FF8278}
+.btn-rec:hover{background:rgba(255,77,62,.2)}
+.icon{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+.chip{font-size:11px;font-weight:600;padding:2.5px 9px;border-radius:20px;border:1px solid;letter-spacing:.01em;white-space:nowrap}
+
+/* labels (used in list rows + chips inputs) */
+.lbl{font-size:10px;font-weight:600;padding:1.5px 7px;border-radius:5px;letter-spacing:.01em}
+.lbl-kgl{background:rgba(231,178,76,.13);color:var(--gold);box-shadow:inset 0 0 0 1px rgba(231,178,76,.2)}
+.lbl-kif{background:rgba(84,197,222,.12);color:var(--commit);box-shadow:inset 0 0 0 1px rgba(84,197,222,.2)}
+.lbl-int{background:rgba(178,149,232,.12);color:var(--ask);box-shadow:inset 0 0 0 1px rgba(178,149,232,.2)}
+.lbl-dev{background:rgba(138,196,121,.12);color:var(--suggest);box-shadow:inset 0 0 0 1px rgba(138,196,121,.2)}
+
+/* scrollbars */
+.scroll{overflow-y:auto;scrollbar-width:thin;scrollbar-color:#322C24 transparent}
+.scroll::-webkit-scrollbar{width:9px}
+.scroll::-webkit-scrollbar-thumb{background:#2C271F;border-radius:9px;border:3px solid transparent;background-clip:padding-box}
+.scroll::-webkit-scrollbar-thumb:hover{background:#3a3329;background-clip:padding-box}
+
+/* forms (shared across new / settings / onboarding) */
+.field{margin-bottom:24px}
+.field>label{display:block;font-family:var(--f-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-bottom:9px}
+.inp{width:100%;background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;color:var(--ink);font-family:var(--f-ui);font-size:14px;outline:none;transition:.18s}
+.inp::placeholder{color:var(--ink-4)}
+.inp:focus{border-color:var(--gold-line);background:var(--bg-1);box-shadow:0 0 0 3px var(--gold-soft)}
+textarea.inp{resize:none;line-height:1.6;min-height:120px}
+.hint{font-size:12px;color:var(--ink-4);margin-top:8px;line-height:1.5}
+.backlink{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3);cursor:pointer;margin-bottom:20px;background:none;border:0;font-family:var(--f-ui)}
+.backlink:hover{color:var(--ink)}
+
+/* feature toggle grid (F/C/S/Q) */
+.feat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.feat{border:1px solid var(--line);background:var(--bg-2);border-radius:12px;padding:14px 10px;text-align:center;cursor:pointer;transition:.18s var(--ease)}
+.feat .k{font-family:var(--f-disp);font-size:22px;font-weight:600;line-height:1}
+.feat .n{font-family:var(--f-mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-top:7px}
+.feat.on[data-k="F"]{border-color:rgba(240,166,64,.5);background:rgba(240,166,64,.08)} .feat.on[data-k="F"] .k{color:var(--fact)}
+.feat.on[data-k="C"]{border-color:rgba(84,197,222,.5);background:rgba(84,197,222,.08)} .feat.on[data-k="C"] .k{color:var(--commit)}
+.feat.on[data-k="S"]{border-color:rgba(138,196,121,.5);background:rgba(138,196,121,.08)} .feat.on[data-k="S"] .k{color:var(--suggest)}
+.feat.on[data-k="Q"]{border-color:rgba(178,149,232,.5);background:rgba(178,149,232,.08)} .feat.on[data-k="Q"] .k{color:var(--ask)}
+.feat:not(.on) .k{color:var(--ink-4)}
+
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,77,62,.55);opacity:1}50%{box-shadow:0 0 0 7px rgba(255,77,62,0);opacity:.6}}
+@keyframes eq{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
