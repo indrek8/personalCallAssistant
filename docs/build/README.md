@@ -47,4 +47,4 @@ M4  Post-analysis       Sonnet extraction → review/edit → save
 M5  Manage & polish     dashboard, labels, settings, onboarding, error handling
 ```
 
-**Start here:** [milestones.md → M0](milestones.md#m0--de-risking-spikes-throwaway-code).
+**Progress:** M1 ✅ complete & merged (PR #1); M0 spikes **s1/s2 ✅ validated** (s3/s4 are manual hardware/credential runs). **Next → [M2: Capture → Live Transcript](milestones.md#m2--capture--live-transcript-the-engine).**

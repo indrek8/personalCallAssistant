@@ -14,12 +14,12 @@ Claude API plumbing, before any architecture is committed.
 
 | Bin              | Spike | Proves | RUN doc |
 |------------------|-------|--------|---------|
-| `s1_whisper`     | S1    | `small`/`base` transcribe a 10 s 16 kHz WAV faster than realtime (RTF < 1.0) | [RUN-s1.md](RUN-s1.md) |
-| `s3_dual_audio`  | S3    | mic + BlackHole capture simultaneously → stereo WAV (L=you, R=remote) | [RUN-s3.md](RUN-s3.md) |
+| `s1_whisper`            | S1    | `small`/`base`/`medium` transcribe a 10 s 16 kHz WAV faster than realtime (RTF < 1.0) | [RUN-s1.md](RUN-s1.md) |
+| `s2_concurrent_whisper` | S2    | two Whisper streams at once (You + Remote) stay real-time → 2-stream model holds | [RUN-s2.md](RUN-s2.md) |
+| `s3_dual_audio`         | S3    | mic + BlackHole capture simultaneously → stereo WAV (L=you, R=remote) | [RUN-s3.md](RUN-s3.md) |
 | `s4_claude`      | S4    | one Haiku + one Sonnet Messages API call; parse text, tokens, cost | [RUN-s4.md](RUN-s4.md) |
 
-(S2 — running two Whisper transcriptions concurrently — is a variation on S1 and
-is not built here; run `s1_whisper` twice in parallel if you want to measure it.)
+**All four spikes are built. Result (M0):** s1 `small` RTF 0.040 / `medium` 0.055; s2 concurrent ×2 RTF 0.032 → the **2-stream You/Remote model holds**.
 
 ## Prerequisites
 
@@ -37,9 +37,12 @@ is not built here; run `s1_whisper` twice in parallel if you want to measure it.
 ```sh
 # from this directory: /Users/indrek/Development/personalCallAssistant/spikes
 
-# S1 — Whisper speed
+# S1 — Whisper speed (single stream)
 ./fetch-model.sh small
 cargo run --release --bin s1_whisper -- sample.wav        # see RUN-s1.md for the WAV
+
+# S2 — concurrent ×2 (You + Remote), same model + WAV
+cargo run --release --bin s2_concurrent_whisper -- sample.wav
 
 # S3 — dual capture (after installing BlackHole + reboot + Multi-Output device)
 cargo run --release --bin s3_dual_audio
@@ -52,17 +55,19 @@ cargo run --bin s4_claude
 
 ```
 spikes/
-  Cargo.toml          # three [[bin]] targets, deps pinned per spike
+  Cargo.toml          # four [[bin]] targets, deps pinned per spike
   fetch-model.sh      # download a ggml whisper model into models/
   README.md           # this file
   RUN-s1.md           # S1 instructions (model + sample WAV)
+  RUN-s2.md           # S2 instructions (concurrent ×2)
   RUN-s3.md           # S3 instructions (BlackHole + Multi-Output + reboot)
   RUN-s4.md           # S4 instructions (.env key)
   src/bin/
     s1_whisper.rs
+    s2_concurrent_whisper.rs
     s3_dual_audio.rs
     s4_claude.rs
-  models/             # gitignored model blobs (created by fetch-model.sh)
+  models/             # gitignored *.bin blobs + tracked models.md (how to fetch)
   target/             # gitignored (root .gitignore already ignores spikes/target/)
 ```
 

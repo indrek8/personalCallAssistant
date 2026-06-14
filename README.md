@@ -14,11 +14,13 @@ This project is planned as a journey between two points:
 
 We build the MVP first, then iterate it closer and closer to Version 1.
 
-> **Status:** Pre-implementation — vision, design, and a full build plan are done. Next move: **M0, the de-risking spikes** (validate Whisper speed + dual-audio capture), then the walking skeleton. See **[docs/build/milestones.md](docs/build/milestones.md)**.
+> **Status:** **M1 complete & merged** — a running Tauri + Svelte + Rust app (six screens, real device enumeration + file storage). M0 spikes **s1/s2 validated** (Whisper real-time + 2-stream confirmed; `medium` is the default). Next: **M2 — the capture → live transcript engine**. See **[docs/build/milestones.md](docs/build/milestones.md)**.
 
 ## Repository map
 
 ```
+src/ · src-tauri/     the app — Tauri v2 + SvelteKit/TS + Rust (M1; `npm run tauri dev`)
+spikes/               M0 de-risking spikes (Whisper speed, dual-audio, Claude) + models.md
 docs/
 ├── vision.md         Version 1 — the full aspiration (the destination)
 ├── mvp.md            MVP — first iteration toward v1 (scope + build steps)
@@ -31,7 +33,7 @@ design/
 └── sidebar-prototype.jsx       vNext reference (the sidebar + projects direction)
 ```
 
-The app itself (Tauri + Svelte + Rust) gets scaffolded at the repo root in MVP Step 1: `package.json`, `src/` (Svelte frontend), `src-tauri/` (Rust backend).
+The app lives at the repo root — `package.json`, `src/` (SvelteKit + TS frontend), `src-tauri/` (Rust backend) — scaffolded and merged in **M1**. Run it with `npm run tauri dev`.
 
 ## Locked decisions (MVP)
 

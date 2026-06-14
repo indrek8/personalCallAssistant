@@ -15,8 +15,10 @@ M0 Spikes ─► M1 Skeleton ─► M2 Capture→Transcript ─► M3 Live AI �
 
 **Goal:** answer the two open technical questions before committing to architecture. Code here is disposable.
 
-- [ ] **S1 · Whisper speed.** Standalone Rust bin: load `small` (and `base`) via `whisper-rs`, transcribe a pre-recorded 10 s 16 kHz WAV, print text + wall-time. Run on the target Mac.
-- [ ] **S2 · Whisper ×2 feasibility.** Run two transcriptions concurrently (simulating you+remote). Measure CPU + latency. Decides **2-stream vs single-stream** attribution.
+> **Status:** ✅ **s1 + s2 validated** — Whisper `small` RTF 0.040 / `medium` 0.055; concurrent ×2 RTF 0.032 → **2-stream model locked**. ⬜ s3 (dual capture) + s4 (Claude) remain manual hardware/credential runs.
+
+- [x] **S1 · Whisper speed.** Standalone Rust bin: load `small` (and `base`) via `whisper-rs`, transcribe a pre-recorded 10 s 16 kHz WAV, print text + wall-time. Run on the target Mac.
+- [x] **S2 · Whisper ×2 feasibility.** Run two transcriptions concurrently (simulating you+remote). Measure CPU + latency. Decides **2-stream vs single-stream** attribution.
 - [ ] **S3 · Dual-audio capture.** Standalone Rust bin: open the **mic** and a **BlackHole** input via `cpal` simultaneously; write a 10 s stereo WAV (L=mic, R=blackhole). Manually set up the Multi-Output Device and confirm remote audio (e.g. a YouTube tab) lands on R while your voice lands on L.
 - [ ] **S4 · Claude calls.** Minimal `reqwest` call to Haiku + Sonnet with the live + post JSON schemas; confirm parsing and capture token/cost fields.
 
@@ -33,12 +35,14 @@ M0 Spikes ─► M1 Skeleton ─► M2 Capture→Transcript ─► M3 Live AI �
 
 **Goal:** a running app proving the whole stack is wired — frontend ↔ Rust ↔ filesystem ↔ system audio — with no real features yet. (= [../mvp.md](../mvp.md) Step 1.)
 
-- [ ] Scaffold Tauri v2 + Svelte + TS (`npm create tauri-app@latest`).
-- [ ] Module skeleton per [technical-design.md](technical-design.md) §3 (empty `audio/ stt/ ai/ storage/ session/`).
-- [ ] `mode` store + screen shells: Dashboard (split), New Session, Live (stub), Post (stub), Settings, Onboarding — ported from `design/prototype.html`.
-- [ ] Command `list_audio_input_devices` (real `cpal`) → populates a dropdown. **Proves Svelte ↔ Rust ↔ Core Audio.**
-- [ ] Storage module: `create_session` writes `sessions/{uuid}/metadata.json`; `list_sessions` reads them; dashboard left pane renders from disk.
-- [ ] Boot: load `settings.json`, route to onboarding vs dashboard.
+> **Status:** ✅ **Complete & merged** (PR #1) — all acceptance criteria met (build green; session create/persist verified; real `cpal` dropdown).
+
+- [x] Scaffold Tauri v2 + Svelte + TS (`npm create tauri-app@latest`).
+- [x] Module skeleton per [technical-design.md](technical-design.md) §3 (empty `audio/ stt/ ai/ storage/ session/`).
+- [x] `mode` store + screen shells: Dashboard (split), New Session, Live (stub), Post (stub), Settings, Onboarding — ported from `design/prototype.html`.
+- [x] Command `list_audio_input_devices` (real `cpal`) → populates a dropdown. **Proves Svelte ↔ Rust ↔ Core Audio.**
+- [x] Storage module: `create_session` writes `sessions/{uuid}/metadata.json`; `list_sessions` reads them; dashboard left pane renders from disk.
+- [x] Boot: load `settings.json`, route to onboarding vs dashboard.
 
 **Acceptance:**
 - `npm run tauri dev` opens the window on the dashboard shell.
