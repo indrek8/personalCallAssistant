@@ -112,9 +112,14 @@ export interface PreflightResult {
   checks: PreflightCheck[];
 }
 
-/** Whisper model download/validity status. */
+/** Whisper model catalog entry + download/validity status. */
 export interface ModelStatus {
   name: string;
+  label: string;
+  approx_mb: number;
+  speed_note: string;
+  /** Shown in the onboarding/Settings picker (base is hidden). */
+  offered: boolean;
   downloaded: boolean;
   size_bytes: number;
   path: string;

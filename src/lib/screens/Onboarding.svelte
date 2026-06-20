@@ -1,26 +1,36 @@
 <script lang="ts">
-  import { navigate, devices, settings, refreshDevices, banner } from "$lib/stores";
-  import { saveSettings, isTauri } from "$lib/ipc";
+  import { navigate, devices, settings, refreshDevices, banner, modelDownload } from "$lib/stores";
+  import { saveSettings, isTauri, listModels, downloadModel } from "$lib/ipc";
   import Mark from "$lib/components/Mark.svelte";
-  import type { Settings as SettingsT } from "$lib/types";
+  import type { Settings as SettingsT, ModelStatus } from "$lib/types";
 
-  // 4-step wizard (flows.md §3). Step 1 welcome lives in the brand rail copy;
-  // the form steps are 1..4 here (Claude, Audio, Model, Done).
+  // 4-step wizard (flows.md §3): Connect Claude, Audio, Model, Done. The model
+  // step downloads a local Whisper model before setup can finish.
   let step = $state(1);
   let showKey = $state(false);
   let apiKey = $state("sk-ant-api03-xxxxxxxxxxxxxxxxxxxx");
   let captureDevice = $state("");
-  let model = $state("medium");
   let saving = $state(false);
 
-  const STEPS = ["Connect Claude", "Audio device", "Transcription model", "All set"];
+  // Model selection — no preset; the user picks small or medium and downloads it.
+  let model = $state("");
+  let models = $state<ModelStatus[]>([]);
+  let dlActive = false;
 
+  const STEPS = ["Connect Claude", "Audio device", "Transcription model", "All set"];
   const WAVE = [20, 38, 52, 30, 46, 58, 34, 44, 24, 40, 54, 28, 48, 36, 22];
-  const MODELS: { id: string; name: string; desc: string }[] = [
-    { id: "base", name: "Base", desc: "Fastest · lower accuracy" },
-    { id: "small", name: "Small", desc: "Balanced · fast" },
-    { id: "medium", name: "Medium", desc: "Best accuracy · recommended" },
-  ];
+
+  async function loadModels() {
+    try {
+      models = (await listModels()).filter((m) => m.offered);
+    } catch (e) {
+      banner.set(`Could not list models: ${String(e)}`);
+    }
+  }
+  const selectedModel = $derived(models.find((m) => m.name === model) ?? null);
+  function download() {
+    if (model) downloadModel(model).catch((e) => banner.set(`Download failed: ${String(e)}`));
+  }
 
   $effect(() => {
     if (step === 2 && $devices.length === 0) refreshDevices();
@@ -28,6 +38,19 @@
   $effect(() => {
     if (!captureDevice && $devices.length) {
       captureDevice = ($devices.find((d) => d.is_default) ?? $devices[0]).id;
+    }
+  });
+  $effect(() => {
+    if (step === 3 && models.length === 0) void loadModels();
+  });
+  // When a download finishes (store returns to null after being active), refresh
+  // statuses so the chosen model flips to "ready".
+  $effect(() => {
+    const dl = $modelDownload;
+    if (dl) dlActive = true;
+    else if (dlActive) {
+      dlActive = false;
+      void loadModels();
     }
   });
 
@@ -44,20 +67,20 @@
       if (isTauri()) {
         const base: SettingsT = $settings ?? {
           capture_device_id: null,
-          whisper_model: "medium",
+          whisper_model: "small",
           default_toggles: { f: true, c: true, s: false, q: true },
           budget_default: 5,
           storage_path: null,
           first_run: true,
         };
-        const next: SettingsT = {
+        const updated: SettingsT = {
           ...base,
           capture_device_id: captureDevice || null,
-          whisper_model: model,
+          whisper_model: model || base.whisper_model,
           first_run: false,
         };
-        await saveSettings(next);
-        settings.set(next);
+        await saveSettings(updated);
+        settings.set(updated);
       }
       navigate("dashboard");
     } catch (e) {
@@ -144,23 +167,34 @@
         <div class="step-no rise r1">Step 3 of 4</div>
         <h2 class="rise r1">Transcription model</h2>
         <p class="rise r2">
-          Whisper runs locally on your machine. Pick a model — you can change this any time in
-          Settings.
+          Whisper runs locally — no audio leaves your machine. Pick a model to download now; you can
+          add the higher-accuracy one later in Settings.
         </p>
         <div class="rise r3" style="max-width:480px">
           <div class="field">
             <div class="radio">
-              {#each MODELS as m}
-                <button class="rad" class:on={model === m.id} onclick={() => (model = m.id)}>
-                  <div class="rn"><span class="ring"></span>{m.name}</div>
-                  <div class="rd">{m.desc}</div>
+              {#each models as m}
+                <button class="rad" class:on={model === m.name} onclick={() => (model = m.name)}>
+                  <div class="rn"><span class="ring"></span>{m.label}{#if m.downloaded}<span class="dl-ok">✓ ready</span>{/if}</div>
+                  <div class="rd">{m.approx_mb} MB · {m.speed_note}</div>
                 </button>
               {/each}
+              {#if models.length === 0}
+                <div class="rd" style="padding:8px">Loading models…</div>
+              {/if}
             </div>
           </div>
-          <div style="display:flex;gap:12px;margin-top:8px">
+          <div style="display:flex;gap:12px;margin-top:12px;align-items:center">
             <button class="btn btn-ghost" onclick={back}>Back</button>
-            <button class="btn btn-gold" style="padding:12px 22px" onclick={next}>Continue</button>
+            {#if !model}
+              <button class="btn btn-gold" style="padding:12px 22px" disabled>Select a model</button>
+            {:else if selectedModel?.downloaded}
+              <button class="btn btn-gold" style="padding:12px 22px" onclick={next}>Continue</button>
+            {:else if $modelDownload && $modelDownload.name === model}
+              <button class="btn btn-gold" style="padding:12px 22px" disabled>Downloading {$modelDownload.pct}%…</button>
+            {:else}
+              <button class="btn btn-gold" style="padding:12px 22px" onclick={download}>Download {selectedModel?.label} · {selectedModel?.approx_mb} MB</button>
+            {/if}
           </div>
         </div>
       {:else}
@@ -213,4 +247,5 @@
   .rad .rd{font-size:11px;color:var(--ink-3);margin-top:5px}
   .ring{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--line);flex:none}
   .rad.on .ring{border-color:var(--gold);background:radial-gradient(circle,var(--gold) 42%,transparent 46%)}
+  .dl-ok{margin-left:auto;font-family:var(--f-mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--suggest)}
 </style>
