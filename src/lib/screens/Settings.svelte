@@ -1,12 +1,23 @@
 <script lang="ts">
   import { navigate, devices, settings, refreshDevices, banner, modelDownload } from "$lib/stores";
-  import { saveSettings, isTauri, listModels, downloadModel } from "$lib/ipc";
+  import {
+    saveSettings,
+    isTauri,
+    listModels,
+    downloadModel,
+    testApiKey,
+    saveApiKey,
+    getApiKeyStatus,
+  } from "$lib/ipc";
   import type { Settings as SettingsT, Toggles, ModelStatus } from "$lib/types";
 
   type NavKey = "api" | "audio" | "transcription" | "storage";
   let section = $state<NavKey>("api");
   let showKey = $state(false);
-  let apiKey = $state("sk-ant-api03-xxxxxxxxxxxxxxxxxxxx");
+  let apiKey = $state("");
+  let testingKey = $state(false);
+  let keyMsg = $state<{ ok: boolean; text: string } | null>(null);
+  let keyPresent = $state(false);
 
   // Working copy of settings (falls back to sensible defaults outside Tauri).
   const base: SettingsT = $settings ?? {
@@ -51,6 +62,47 @@
       void loadModels();
     }
   });
+
+  async function loadKeyStatus() {
+    if (!isTauri()) return;
+    try {
+      keyPresent = (await getApiKeyStatus()).present;
+    } catch {
+      /* status is best-effort */
+    }
+  }
+  $effect(() => {
+    if (section === "api") void loadKeyStatus();
+  });
+
+  async function testKey() {
+    if (!isTauri()) return;
+    const key = apiKey.trim();
+    if (!key) {
+      keyMsg = { ok: false, text: "Paste a key to test." };
+      return;
+    }
+    testingKey = true;
+    keyMsg = null;
+    try {
+      const res = await testApiKey(key);
+      if (res.ok) {
+        await saveApiKey(key);
+        apiKey = "";
+        keyPresent = true;
+        keyMsg = {
+          ok: true,
+          text: `Connected${res.model ? ` · ${res.model}` : ""} · saved to Keychain`,
+        };
+      } else {
+        keyMsg = { ok: false, text: res.error ?? "That key didn't work." };
+      }
+    } catch (e) {
+      keyMsg = { ok: false, text: `Couldn't reach Claude: ${String(e)}` };
+    } finally {
+      testingKey = false;
+    }
+  }
 
   async function persist() {
     if (!isTauri()) return;
@@ -97,12 +149,18 @@
           <div class="field">
             <label for="set-key">Claude API key</label>
             <div class="key-in">
-              <input id="set-key" class="inp" type={showKey ? "text" : "password"} bind:value={apiKey} />
+              <input id="set-key" class="inp" type={showKey ? "text" : "password"} placeholder={keyPresent ? "Key stored — paste a new key to replace" : "sk-ant-..."} bind:value={apiKey} />
               <button class="btn" onclick={() => (showKey = !showKey)}>{showKey ? "Hide" : "Show"}</button>
-              <button class="btn btn-gold">Test</button>
+              <button class="btn btn-gold" disabled={testingKey} onclick={testKey}>{testingKey ? "Testing…" : "Test"}</button>
             </div>
             <div style="margin-top:10px">
-              <span class="statusok"><svg class="icon" width="13" height="13" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></svg>Connected · keys stored in macOS Keychain</span>
+              {#if keyMsg}
+                <span class={keyMsg.ok ? "statusok" : "statuserr"}>{keyMsg.text}</span>
+              {:else if keyPresent}
+                <span class="statusok"><svg class="icon" width="13" height="13" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></svg>Key stored in macOS Keychain</span>
+              {:else}
+                <span class="statuserr">No API key set — add one to enable live AI</span>
+              {/if}
             </div>
           </div>
           <div class="field">
@@ -201,6 +259,7 @@
   .key-in{display:flex;gap:8px;align-items:center}
   .key-in .inp{font-family:var(--f-mono);font-size:13px;letter-spacing:.04em}
   .statusok{display:inline-flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:11px;color:var(--suggest)}
+  .statuserr{display:inline-flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:11px;color:var(--late)}
 
   .select-wrap{position:relative}
   .select-wrap select{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:36px}

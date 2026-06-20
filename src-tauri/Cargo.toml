@@ -33,11 +33,14 @@ crossbeam-channel = "0.5"
 # Local STT (M2/PR2). whisper-rs 0.16 + `metal` (Apple-Silicon GPU) matches the
 # validated M0/S1 spike; reqwest downloads ggml models (resumable) for model_mgr.
 whisper-rs = { version = "0.16", features = ["metal"] }
-reqwest = { version = "0.12", features = ["blocking"] }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 dirs = "5"
+# Claude API key in the macOS Keychain (M3, D11). `apple-native` selects the
+# macOS Keychain backend; the key is never written to settings.json or logs.
+keyring = { version = "3", features = ["apple-native"] }
 
 # whisper.cpp is unbearably slow without optimization, even in dev builds. Build
 # all dependencies optimized so local STT reflects realistic timings, while

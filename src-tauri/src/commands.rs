@@ -16,7 +16,9 @@ use serde_json::json;
 use std::thread;
 use tauri::{AppHandle, State};
 
+use crate::ai::ClaudeClient;
 use crate::audio::{self, AudioDevice};
+use crate::config;
 use crate::error::{AppError, AppResult};
 use crate::events;
 use crate::session::manager::{self, AppState};
@@ -135,6 +137,20 @@ pub fn run_preflight(_session_id: String) -> AppResult<PreflightResult> {
     let settings = storage::get_settings()?;
     let mut checks = Vec::new();
 
+    // API key present (EXC-KEY) — M3. Presence only; validity is confirmed by the
+    // Settings "Test" ping and surfaces again as EXC-KEY on the first live call.
+    if config::has_api_key() {
+        checks.push(check("key", "Claude API key", "ok", "API key configured", None));
+    } else {
+        checks.push(check(
+            "key",
+            "Claude API key",
+            "fail",
+            "No Claude API key — add one in Settings",
+            None,
+        ));
+    }
+
     // Mirror start()'s logic: the selected device if present, else the default.
     let mic_ok = match &settings.capture_device_id {
         Some(id) if audio::find_input_device_by_id(id).is_ok() => true,
@@ -231,6 +247,70 @@ pub fn download_model(app: AppHandle, name: String) -> AppResult<()> {
         }
     });
     Ok(())
+}
+
+// ----------------------------------------------------------------------------
+// M3 (PR1) — API key management: Keychain + 1-token validation ping
+// ----------------------------------------------------------------------------
+
+/// Result of `test_api_key`: `ok` plus the model that answered, or an error.
+#[derive(Serialize)]
+pub struct TestKeyResult {
+    ok: bool,
+    model: Option<String>,
+    error: Option<String>,
+}
+
+/// `test_api_key({ key }) → { ok, model?, error? }`. A 1-token Haiku ping that
+/// validates the supplied key. Runs on a blocking thread so the network round-trip
+/// never stalls the UI. Does **not** persist — the caller saves on success.
+#[tauri::command]
+pub async fn test_api_key(key: String) -> AppResult<TestKeyResult> {
+    tauri::async_runtime::spawn_blocking(move || run_test_key(key))
+        .await
+        .map_err(|e| AppError::Api(format!("test task failed: {e}")))
+}
+
+fn run_test_key(key: String) -> TestKeyResult {
+    match ClaudeClient::new(key) {
+        Ok(client) => match client.test_key() {
+            Ok(model) => TestKeyResult {
+                ok: true,
+                model: Some(model),
+                error: None,
+            },
+            Err(e) => TestKeyResult {
+                ok: false,
+                model: None,
+                error: Some(e.to_string()),
+            },
+        },
+        Err(e) => TestKeyResult {
+            ok: false,
+            model: None,
+            error: Some(e.to_string()),
+        },
+    }
+}
+
+/// `save_api_key({ key }) → ()`. Persists to the macOS Keychain (never to disk).
+#[tauri::command]
+pub fn save_api_key(key: String) -> AppResult<()> {
+    config::save_api_key(&key)
+}
+
+/// Whether a key is configured — the UI shows status without ever seeing the key.
+#[derive(Serialize)]
+pub struct ApiKeyStatus {
+    present: bool,
+}
+
+/// `get_api_key_status() → { present }`.
+#[tauri::command]
+pub fn get_api_key_status() -> AppResult<ApiKeyStatus> {
+    Ok(ApiKeyStatus {
+        present: config::has_api_key(),
+    })
 }
 
 /// `ask_ai({ question })` → `{ answer, cost }` (M3).

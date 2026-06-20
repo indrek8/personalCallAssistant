@@ -7,6 +7,7 @@
 mod ai;
 pub mod audio;
 mod commands;
+mod config;
 pub mod error;
 mod events;
 pub mod session;
@@ -51,6 +52,10 @@ pub fn run() {
             commands::run_preflight,
             commands::list_models,
             commands::download_model,
+            // --- M3 live AI — API key + client (PR1) ---
+            commands::test_api_key,
+            commands::save_api_key,
+            commands::get_api_key_status,
             // --- M3/M4/M5 stubs (named per §7) ---
             commands::ask_ai,
             commands::run_post_analysis,

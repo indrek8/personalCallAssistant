@@ -1,6 +1,6 @@
 <script lang="ts">
   import { navigate, devices, settings, refreshDevices, banner, modelDownload } from "$lib/stores";
-  import { saveSettings, isTauri, listModels, downloadModel } from "$lib/ipc";
+  import { saveSettings, isTauri, listModels, downloadModel, testApiKey, saveApiKey } from "$lib/ipc";
   import Mark from "$lib/components/Mark.svelte";
   import type { Settings as SettingsT, ModelStatus } from "$lib/types";
 
@@ -8,7 +8,9 @@
   // step downloads a local Whisper model before setup can finish.
   let step = $state(1);
   let showKey = $state(false);
-  let apiKey = $state("sk-ant-api03-xxxxxxxxxxxxxxxxxxxx");
+  let apiKey = $state("");
+  let testingKey = $state(false);
+  let keyError = $state<string | null>(null);
   let captureDevice = $state("");
   let saving = $state(false);
 
@@ -59,6 +61,33 @@
   }
   function back() {
     if (step > 1) step -= 1;
+  }
+
+  async function testAndContinue() {
+    if (!isTauri()) {
+      next();
+      return;
+    }
+    const key = apiKey.trim();
+    if (!key) {
+      keyError = "Paste your API key, or skip for now.";
+      return;
+    }
+    testingKey = true;
+    keyError = null;
+    try {
+      const res = await testApiKey(key);
+      if (res.ok) {
+        await saveApiKey(key);
+        next();
+      } else {
+        keyError = res.error ?? "That key didn't work — check it and try again.";
+      }
+    } catch (e) {
+      keyError = `Couldn't reach Claude: ${String(e)}`;
+    } finally {
+      testingKey = false;
+    }
   }
 
   async function finish() {
@@ -127,14 +156,17 @@
           <div class="field">
             <label for="ob-key">Claude API key</label>
             <div class="key-in">
-              <input id="ob-key" class="inp" type={showKey ? "text" : "password"} bind:value={apiKey} />
+              <input id="ob-key" class="inp" type={showKey ? "text" : "password"} placeholder="sk-ant-..." bind:value={apiKey} />
               <button class="btn" onclick={() => (showKey = !showKey)}>{showKey ? "Hide" : "Show"}</button>
             </div>
           </div>
           <div style="display:flex;gap:12px;margin-top:8px">
-            <button class="btn btn-gold" style="padding:12px 22px" onclick={next}>Test &amp; continue</button>
+            <button class="btn btn-gold" style="padding:12px 22px" disabled={testingKey} onclick={testAndContinue}>{testingKey ? "Testing…" : "Test & continue"}</button>
             <button class="btn btn-ghost" onclick={next}>Skip for now</button>
           </div>
+          {#if keyError}
+            <div class="key-err">{keyError}</div>
+          {/if}
         </div>
       {:else if step === 2}
         <div class="step-no rise r1">Step 2 of 4</div>
@@ -235,6 +267,7 @@
 
   .key-in{display:flex;gap:8px;align-items:center}
   .key-in .inp{font-family:var(--f-mono);font-size:13px;letter-spacing:.04em}
+  .key-err{margin-top:12px;font-size:12.5px;color:var(--late);line-height:1.45;max-width:440px}
 
   .select-wrap{position:relative}
   .select-wrap select{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:36px}
