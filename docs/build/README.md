@@ -37,6 +37,11 @@ Key technical decisions made in these docs (revisit consciously, not by accident
 | D8 | Flat-file storage with normalized IDs | Simple MVP, forward-compatible | Locked |
 | D9 | **Transcript as `transcript.jsonl`** (append-only, one entry per line) | True crash-safe incremental writes (no array-rewrite window) — the §9 "JSONL internally" option; read back into the array the UI expects | **M2** |
 | D10 | **EXC-DEV-DROP = detect → rebuild on the default device → notify** (retry-capped per side) | A mid-call device unplug must not freeze capture; seamless hot-swap stays a v1/HAL concern | **M2** |
+| D11 | **API key in macOS Keychain** (`keyring`), read precedence Keychain → `ANTHROPIC_API_KEY` env | Shipped-app design; never in `settings.json`; env keeps the dev/spike path working | **M3** |
+| D12 | **Live findings via structured outputs** (`output_config.format` json_schema) | The API guarantees schema-valid JSON on Haiku; defensive parse stays a fallback | **M3** |
+| D13 | **Ask-AI streamed** (SSE → `ai-chat-token`) | Word-by-word answers feel right mid-call | **M3** |
+| D14 | Models `claude-haiku-4-5` (live) / `claude-sonnet-4-6` (chat) — bare ids | Verified current against the API reference | **M3** |
+| D15 | **AI runs on std threads + `reqwest::blocking`**, not tokio | Matches the M2 concurrency model (capture / STT / model_mgr all sync) | **M3** |
 
 ## Milestone overview
 
@@ -49,4 +54,4 @@ M4  Post-analysis       Sonnet extraction → review/edit → save
 M5  Manage & polish     dashboard, labels, settings, onboarding, error handling
 ```
 
-**Progress:** **M2 ✅ complete & merged** (PRs #4–#7 + closeout) — capture → VAD → Whisper → live two-sided transcript, IPC + Live UI, pre-flight, model management, crash recovery, EXC-DEV-DROP device fallback; 20 unit tests, clippy clean. M1 ✅ (PR #1); **M0 ✅** (s1–s4). **Next → [M3: Live AI](milestones.md#m3--live-ai).**
+**Progress:** **M3 ✅ complete & merged** (PRs #9–#12) — Claude client + Keychain keys, live Haiku findings + F/C/S/Q toggles + cost + budget/failure handling, streamed Sonnet Ask-AI, save-action persistence; 42 unit tests, clippy clean. M2 ✅ (PRs #4–#8) — capture → live two-sided transcript. M1 ✅ (PR #1); **M0 ✅** (s1–s4). **Next → [M4: Post-Analysis & Review](milestones.md#m4--post-analysis--review).**

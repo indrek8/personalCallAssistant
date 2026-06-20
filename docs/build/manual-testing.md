@@ -274,5 +274,30 @@ No-hardware subset (no BlackHole/mic set up): `cargo test` + **T1**, **T2**, **T
 | T7 | EXC-CRASH | ✅ implemented (routes to `completed`, not POST_PROCESS yet — M4) |
 | T8 | EXC-DEV-DROP | ✅ implemented (default-input fallback) |
 | T12 | EXC-SILENCE, EXC-CORRUPT | ✅ silence; EXC-CORRUPT degrades-by-omission (full UI M5) |
-| — | EXC-KEY, EXC-MIC-PERM (block), EXC-WHISPER-LAG (UI), EXC-BUDGET, EXC-API-* | M3+ |
+| — | EXC-MIC-PERM (block), EXC-WHISPER-LAG (UI) | M3+ |
+
+---
+
+## M3 — Live AI is now real (PRs #9–#12)
+
+The §0 "stubbed" rows for the **AI panel**, **API key**, **cost meter**, and the
+inert Ask-AI bar are now live. All cases below need a Claude API key set in Settings
+(or `ANTHROPIC_API_KEY` in the env as a dev fallback). New per-session files:
+`ai_live.json`, `chat.json`, `saved_actions.json`.
+
+### M3-1 — API key (PR1)
+- [ ] Settings → API & AI → paste a real key → **Test** → `Connected · claude-haiku-4-5 · saved to Keychain`; relaunch → "Key stored in Keychain". With no key, pre-flight **blocks Start** (EXC-KEY).
+
+### M3-2 — Live findings (PR2)
+- [ ] Start with **F** + **C** on. Speak a commitment ("I'll send the report by Friday") and a claim that contradicts your prep notes → a **Commitment** and a **Fact-check** finding appear in the panel within a batch cycle (≤30 s); the cost meter ticks up.
+- [ ] Toggle **all four off** → **zero further API calls** (verify in the dev console). Toggle back on → analysis resumes (no retroactive re-run).
+- [ ] Kill Wi-Fi mid-call → the transcript keeps flowing; after 3 failed batches an **EXC-API-LIVE** banner appears and live AI goes quiet. Set a low budget cap → **EXC-BUDGET** pauses live AI at the cap.
+
+### M3-3 — Ask-AI (PR3)
+- [ ] Type "summarize what we've agreed so far" → the answer **streams in** word-by-word in the card above the bar; cost increments; `chat.json` is written.
+
+### M3-4 — Save action (PR4)
+- [ ] Click `[+ Save action]` on a commitment → it flips to "✓ Saved" and a line is appended to `saved_actions.json` in the session folder (survives End → it's there for M4 to merge).
+
+**EXC mapping update:** EXC-KEY, EXC-BUDGET, EXC-API-LIVE are now implemented (M3); see the cases above.
 ```

@@ -154,6 +154,12 @@ pub fn chat_path(id: &str) -> AppResult<PathBuf> {
     Ok(session_dir(id)?.join("chat.json"))
 }
 
+/// Path to a session's user-saved actions (`saved_actions.json`, one per line —
+/// M3 `[+ Save action]`; M4 merges these into post-analysis).
+pub fn saved_actions_path(id: &str) -> AppResult<PathBuf> {
+    Ok(session_dir(id)?.join("saved_actions.json"))
+}
+
 /// Create a new session directory and write `metadata.json`; return its id.
 pub fn create_session(draft: SessionDraft) -> AppResult<SessionMeta> {
     let id = Uuid::new_v4().to_string();

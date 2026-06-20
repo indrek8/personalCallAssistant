@@ -14,7 +14,7 @@
     toggles,
     chat,
   } from "$lib/stores";
-  import { isTauri, pauseCapture, resumeCapture, endSession, setToggles, askAi } from "$lib/ipc";
+  import { isTauri, pauseCapture, resumeCapture, endSession, setToggles, askAi, saveAction as saveActionCmd } from "$lib/ipc";
   import type { StreamTag, Toggles, Finding } from "$lib/types";
 
   // M3: transcript + timer (M2) plus the live AI panel — findings feed, F/C/S/Q
@@ -106,10 +106,17 @@
     : k === "suggestion" ? "Suggestion"
     : "Unanswered";
 
-  // Save action — in-memory for now (M4 persists + merges into post-analysis).
+  // Save action — persisted to saved_actions.json (M4 merges into post-analysis).
   let savedIds = $state<string[]>([]);
-  function saveAction(f: Finding) {
-    if (!savedIds.includes(f.id)) savedIds = [...savedIds, f.id];
+  async function saveAction(f: Finding) {
+    if (savedIds.includes(f.id)) return;
+    savedIds = [...savedIds, f.id];
+    if (!isTauri()) return;
+    try {
+      await saveActionCmd(f);
+    } catch (e) {
+      banner.set(`Could not save action: ${String(e)}`);
+    }
   }
 
   // Ask AI (streamed Sonnet). One turn at a time; the input is disabled while asking.
