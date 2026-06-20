@@ -26,7 +26,7 @@ use crossbeam_channel::{bounded, unbounded, RecvTimeoutError, Sender};
 use rubato::audioadapter_buffers::direct::InterleavedSlice;
 use rubato::{Fft, FixedSync, Indexing, Resampler};
 
-use super::StreamTag;
+use super::{SampleChunk, StreamTag};
 use crate::audio::wav::{StereoWavWriter, SAMPLE_RATE};
 use crate::error::{AppError, AppResult};
 
@@ -217,9 +217,15 @@ pub struct CaptureSession {
 
 impl CaptureSession {
     /// Open the mic + remote devices (by the ids from `list_audio_input_devices`)
-    /// and begin writing `wav_path`. Returns once both streams are live, or an
-    /// error if any device/stream/WAV setup failed.
-    pub fn start(mic_id: String, remote_id: String, wav_path: PathBuf) -> AppResult<Self> {
+    /// and begin writing `wav_path`. If `stt_tx` is `Some`, the resampled 16 kHz
+    /// mono chunks are also teed to the STT feed (PR2). Returns once both streams
+    /// are live, or an error if any device/stream/WAV setup failed.
+    pub fn start(
+        mic_id: String,
+        remote_id: String,
+        wav_path: PathBuf,
+        stt_tx: Option<Sender<SampleChunk>>,
+    ) -> AppResult<Self> {
         let paused = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
         let (ready_tx, ready_rx) = bounded::<AppResult<()>>(1);
@@ -229,7 +235,9 @@ impl CaptureSession {
             let stop = stop.clone();
             thread::Builder::new()
                 .name("audio-capture".into())
-                .spawn(move || run_capture(mic_id, remote_id, wav_path, paused, stop, ready_tx))
+                .spawn(move || {
+                    run_capture(mic_id, remote_id, wav_path, paused, stop, ready_tx, stt_tx)
+                })
                 .map_err(|e| AppError::Audio(format!("spawn capture thread: {e}")))?
         };
 
@@ -298,6 +306,7 @@ fn run_capture(
     paused: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
     ready_tx: Sender<AppResult<()>>,
+    stt_tx: Option<Sender<SampleChunk>>,
 ) -> AppResult<CaptureSummary> {
     // --- Setup: any failure here is reported to the caller via ready_tx. ---
     let setup = (|| -> AppResult<_> {
@@ -348,7 +357,7 @@ fn run_capture(
         }
         match rx.recv_timeout(Duration::from_millis(100)) {
             Ok(chunk) => {
-                process_chunk(&chunk, &mut you_rs, &mut remote_rs, &mut you_q, &mut remote_q, &mut scratch)?;
+                process_chunk(&chunk, &mut you_rs, &mut remote_rs, &mut you_q, &mut remote_q, &mut scratch, stt_tx.as_ref())?;
                 frames_since_flush += drain_interleave(&mut writer, &mut you_q, &mut remote_q)?;
                 if frames_since_flush >= FLUSH_EVERY_FRAMES {
                     writer.flush()?;
@@ -364,7 +373,7 @@ fn run_capture(
     drop(mic_stream);
     drop(remote_stream);
     while let Ok(chunk) = rx.try_recv() {
-        process_chunk(&chunk, &mut you_rs, &mut remote_rs, &mut you_q, &mut remote_q, &mut scratch)?;
+        process_chunk(&chunk, &mut you_rs, &mut remote_rs, &mut you_q, &mut remote_q, &mut scratch, stt_tx.as_ref())?;
         drain_interleave(&mut writer, &mut you_q, &mut remote_q)?;
     }
     scratch.clear();
@@ -382,7 +391,8 @@ fn run_capture(
     })
 }
 
-/// Resample one tagged chunk into its side's 16 kHz output queue.
+/// Resample one tagged chunk to 16 kHz, tee it to the STT feed (if any), and
+/// queue it for the WAV interleaver.
 fn process_chunk(
     chunk: &RawChunk,
     you_rs: &mut StreamResampler,
@@ -390,18 +400,27 @@ fn process_chunk(
     you_q: &mut VecDeque<f32>,
     remote_q: &mut VecDeque<f32>,
     scratch: &mut Vec<f32>,
+    stt_tx: Option<&Sender<SampleChunk>>,
 ) -> AppResult<()> {
     scratch.clear();
-    match chunk.tag {
-        StreamTag::You => {
-            you_rs.push(&chunk.samples, scratch)?;
-            you_q.extend(scratch.drain(..));
-        }
-        StreamTag::Remote => {
-            remote_rs.push(&chunk.samples, scratch)?;
-            remote_q.extend(scratch.drain(..));
+    let (rs, queue) = match chunk.tag {
+        StreamTag::You => (you_rs, you_q),
+        StreamTag::Remote => (remote_rs, remote_q),
+    };
+    rs.push(&chunk.samples, scratch)?;
+
+    // Tee the resampled 16 kHz mono to the STT feed before the WAV interleaver
+    // consumes it (the WAV remains the ground truth either way).
+    if let Some(tx) = stt_tx {
+        if !scratch.is_empty() {
+            let _ = tx.send(SampleChunk {
+                tag: chunk.tag,
+                samples: scratch.clone(),
+            });
         }
     }
+
+    queue.extend(scratch.drain(..));
     Ok(())
 }
 

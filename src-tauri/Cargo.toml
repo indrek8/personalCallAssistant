@@ -30,8 +30,21 @@ cpal = "0.16"
 rubato = "3.0"
 hound = "3.5"
 crossbeam-channel = "0.5"
+# Local STT (M2/PR2). whisper-rs 0.16 + `metal` (Apple-Silicon GPU) matches the
+# validated M0/S1 spike; reqwest downloads ggml models (resumable) for model_mgr.
+whisper-rs = { version = "0.16", features = ["metal"] }
+reqwest = { version = "0.12", features = ["blocking"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 dirs = "5"
+
+# whisper.cpp is unbearably slow without optimization, even in dev builds. Build
+# all dependencies optimized so local STT reflects realistic timings, while
+# keeping fast incremental compiles of our own code (mirrors spikes/Cargo.toml).
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
 

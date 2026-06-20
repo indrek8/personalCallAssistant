@@ -6,6 +6,22 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::audio::StreamTag;
+
+/// One finalized transcript line (technical-design.md §9). Persisted as a line
+/// in `transcript.jsonl` and streamed to the UI via the `transcript-entry` event
+/// (PR3). `stream` serializes to `"you"` / `"remote"`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptEntry {
+    pub id: String,
+    /// Start time from capture start, in milliseconds (sample-derived).
+    pub t_ms: u64,
+    pub stream: StreamTag,
+    pub text: String,
+    /// Mean token probability from Whisper, 0.0–1.0.
+    pub confidence: f32,
+}
+
 /// The session's own lifecycle status, persisted in `metadata.json`.
 /// See flows.md §2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -111,7 +127,7 @@ pub struct CreatedSession {
 pub struct SessionFull {
     pub meta: SessionMeta,
     #[serde(default)]
-    pub transcript: Vec<serde_json::Value>,
+    pub transcript: Vec<TranscriptEntry>,
     #[serde(default)]
     pub analysis: Option<serde_json::Value>,
 }

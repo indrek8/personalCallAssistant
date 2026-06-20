@@ -10,4 +10,5 @@ pub mod model;
 #[allow(unused_imports)]
 pub use model::{
     CreatedSession, LabelRef, SessionDraft, SessionFull, SessionMeta, SessionStatus,
+    TranscriptEntry,
 };

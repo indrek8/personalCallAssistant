@@ -32,6 +32,14 @@ pub enum AppError {
     /// A requested entity (e.g. a session) could not be found.
     #[error("not found: {0}")]
     NotFound(String),
+
+    /// Local STT (Whisper) failure — model load or transcription.
+    #[error("stt error: {0}")]
+    Stt(String),
+
+    /// Whisper model missing, download failed, or failed verification.
+    #[error("model error: {0}")]
+    Model(String),
 }
 
 impl AppError {
@@ -43,6 +51,8 @@ impl AppError {
             AppError::Serialization(_) => "EXC-CORRUPT",
             AppError::Audio(_) => "EXC-NODEV",
             AppError::NotFound(_) => "EXC-NOTFOUND",
+            AppError::Stt(_) => "EXC-WHISPER",
+            AppError::Model(_) => "EXC-MODEL",
         }
     }
 }
