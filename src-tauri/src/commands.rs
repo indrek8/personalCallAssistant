@@ -11,10 +11,12 @@
 //!
 //! Command names here MUST match §7 exactly — they are the integration contract.
 
+use chrono::Utc;
 use serde::Serialize;
 use serde_json::json;
 use std::thread;
 use tauri::{AppHandle, State};
+use uuid::Uuid;
 
 use crate::ai::ClaudeClient;
 use crate::audio::{self, AudioDevice};
@@ -22,7 +24,9 @@ use crate::config;
 use crate::error::{AppError, AppResult};
 use crate::events;
 use crate::session::manager::{self, AppState};
-use crate::session::model::{CreatedSession, SessionDraft, SessionFull, SessionMeta};
+use crate::session::model::{
+    ActionStatus, Analysis, CreatedSession, SessionDraft, SessionFull, SessionMeta, SessionStatus,
+};
 use crate::stt::model_mgr::{self, ModelStatus};
 use crate::storage::{self, schema::{Settings, Toggles}};
 
@@ -374,33 +378,136 @@ pub fn save_action(state: State<'_, AppState>, finding: serde_json::Value) -> Ap
     storage::append_json_line(&storage::saved_actions_path(&session_id)?, &finding)
 }
 
-/// `run_post_analysis({ session_id })` → `()` (M4).
+/// `run_post_analysis({ session_id })` → `()` (M4). Runs Sonnet extraction over the
+/// finished transcript on a blocking thread, writes the draft `analysis.json`
+/// (status → `reviewing`), and drives `analysis-progress`. The review screen
+/// re-fetches the draft via `get_session` (D18); cost is billed inside
+/// `analyze::run` (D-cost). On failure the session is reset to `ending` so a later
+/// quit recovers cleanly, and the error surfaces for the Retry / Save-without
+/// choice (EXC-API-POST).
 #[tauri::command]
-pub fn run_post_analysis(_session_id: String) -> AppResult<()> {
-    Err(not_impl("run_post_analysis"))
+pub async fn run_post_analysis(app: AppHandle, session_id: String) -> AppResult<()> {
+    storage::set_session_status(&session_id, SessionStatus::Analyzing)?;
+    events::emit(&app, events::ANALYSIS_PROGRESS, json!({ "phase": "analyzing" }));
+
+    let app_task = app.clone();
+    let sid = session_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || crate::ai::analyze::run(&app_task, &sid))
+        .await
+        .map_err(|e| AppError::Api(format!("analysis task failed: {e}")))?;
+
+    match result {
+        Ok(analysis) => {
+            storage::write_analysis(&session_id, &analysis)?;
+            storage::set_session_status(&session_id, SessionStatus::Reviewing)?;
+            events::emit(&app, events::ANALYSIS_PROGRESS, json!({ "phase": "reviewing" }));
+            Ok(())
+        }
+        Err(e) => {
+            // Never leave the session stuck `analyzing` — reset so a later quit
+            // recovers transcript-only and the UI can offer Retry / Save-without.
+            let _ = storage::set_session_status(&session_id, SessionStatus::Ending);
+            Err(e)
+        }
+    }
 }
 
-/// `save_analysis({ session_id, analysis })` → `()` (M4).
+/// `save_analysis({ session_id, analysis })` → `()` (M4). Validates + persists the
+/// reviewed analysis and marks the session `completed`. Backfills an id for any
+/// manually-added action row that arrived without one.
 #[tauri::command]
-pub fn save_analysis(
-    _session_id: String,
-    _analysis: serde_json::Value,
-) -> AppResult<()> {
-    Err(not_impl("save_analysis"))
+pub fn save_analysis(session_id: String, analysis: serde_json::Value) -> AppResult<()> {
+    let mut analysis: Analysis = serde_json::from_value(analysis)
+        .map_err(|e| AppError::Serialization(format!("invalid analysis payload: {e}")))?;
+    for action in &mut analysis.actions {
+        if action.id.trim().is_empty() {
+            action.id = Uuid::new_v4().to_string();
+        }
+    }
+    storage::write_analysis(&session_id, &analysis)?;
+    storage::set_session_status(&session_id, SessionStatus::Completed)
 }
 
-/// `update_action_status({ session_id, action_id, status })` → `()` (M4/M5).
+/// `update_action_status({ session_id, action_id, status })` → `()` (M4). Patches
+/// one action's review status in `analysis.json`, setting/clearing `completed_at`.
+/// The inline-edit UI that drives this lands in M5; the command is here now.
 #[tauri::command]
 pub fn update_action_status(
-    _session_id: String,
-    _action_id: String,
-    _status: String,
+    session_id: String,
+    action_id: String,
+    status: String,
 ) -> AppResult<()> {
-    Err(not_impl("update_action_status"))
+    let new_status: ActionStatus = serde_json::from_value(json!(status))
+        .map_err(|_| AppError::Serialization(format!("unknown action status '{status}'")))?;
+    let mut analysis = storage::read_analysis(&session_id)?
+        .ok_or_else(|| AppError::NotFound(format!("analysis for session {session_id}")))?;
+    patch_action_status(&mut analysis, &action_id, new_status)?;
+    storage::write_analysis(&session_id, &analysis)
+}
+
+/// Set one action's status (+ set/clear `completed_at`). Pure over the in-memory
+/// analysis so it's unit-testable; `update_action_status` wraps it with I/O.
+fn patch_action_status(
+    analysis: &mut Analysis,
+    action_id: &str,
+    status: ActionStatus,
+) -> AppResult<()> {
+    let action = analysis
+        .actions
+        .iter_mut()
+        .find(|a| a.id == action_id)
+        .ok_or_else(|| AppError::NotFound(format!("action {action_id}")))?;
+    action.status = status;
+    action.completed_at = (status == ActionStatus::Done).then(|| Utc::now().to_rfc3339());
+    Ok(())
 }
 
 /// `delete_session({ id })` → `()` (M5).
 #[tauri::command]
 pub fn delete_session(_id: String) -> AppResult<()> {
     Err(not_impl("delete_session"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::model::{Action, ActionType, CreatedBy, OwnerType};
+
+    fn action(id: &str) -> Action {
+        Action {
+            id: id.into(),
+            title: "t".into(),
+            owner: String::new(),
+            owner_type: OwnerType::Mine,
+            kind: ActionType::Commitment,
+            status: ActionStatus::Pending,
+            deadline: None,
+            transcript_quote: String::new(),
+            transcript_t_ms: 0,
+            notes: None,
+            created_by: CreatedBy::AiExtracted,
+            completed_at: None,
+        }
+    }
+
+    #[test]
+    fn patch_action_status_sets_and_clears_completed_at() {
+        let mut a = Analysis { actions: vec![action("a1")], ..Default::default() };
+        patch_action_status(&mut a, "a1", ActionStatus::Done).unwrap();
+        assert_eq!(a.actions[0].status, ActionStatus::Done);
+        assert!(a.actions[0].completed_at.is_some());
+        // Moving off `done` clears the completion timestamp.
+        patch_action_status(&mut a, "a1", ActionStatus::InProgress).unwrap();
+        assert_eq!(a.actions[0].status, ActionStatus::InProgress);
+        assert!(a.actions[0].completed_at.is_none());
+    }
+
+    #[test]
+    fn patch_action_status_unknown_id_is_not_found() {
+        let mut a = Analysis { actions: vec![action("a1")], ..Default::default() };
+        assert!(matches!(
+            patch_action_status(&mut a, "nope", ActionStatus::Done),
+            Err(AppError::NotFound(_))
+        ));
+    }
 }

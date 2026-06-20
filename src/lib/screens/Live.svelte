@@ -5,6 +5,7 @@
     transcript,
     live,
     liveSessionId,
+    postSessionId,
     sessions,
     settings,
     devices,
@@ -163,12 +164,20 @@
     if (typeof window !== "undefined" && !window.confirm("End this session?")) return;
     ending = true;
     try {
+      const sid = $liveSessionId;
       if (isTauri()) {
         await endSession();
         await refreshSessions();
       }
       liveSessionId.set(null);
-      navigate("dashboard");
+      // Hand off to post-analysis (M4): the Post screen runs run_post_analysis
+      // over this session and lets the user review before saving.
+      if (sid) {
+        postSessionId.set(sid);
+        navigate("post");
+      } else {
+        navigate("dashboard");
+      }
     } catch (e) {
       banner.set(`Could not end session: ${String(e)}`);
       ending = false;

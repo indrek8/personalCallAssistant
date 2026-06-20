@@ -10,6 +10,7 @@
 
 #![allow(dead_code)] // Built out across M3 PRs; some helpers land before their callers.
 
+pub mod analyze;
 pub mod chat;
 pub mod live;
 pub mod prompts;

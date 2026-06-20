@@ -43,6 +43,10 @@ Key technical decisions made in these docs (revisit consciously, not by accident
 | D14 | Models `claude-haiku-4-5` (live) / `claude-sonnet-4-6` (chat) — bare ids | Verified current against the API reference | **M3** |
 | D15 | **AI runs on std threads + `reqwest::blocking`**, not tokio | Matches the M2 concurrency model (capture / STT / model_mgr all sync) | **M3** |
 | D16 | **Ask-AI is not budget-gated** — `EXC-BUDGET` throttles automatic live (Haiku) spend only; an explicit user Ask-AI question always runs (its cost is still folded into the session total) | An explicit user action shouldn't be silently blocked mid-call | **M3 (hardening)** |
+| D17 | **Post-analysis uses structured outputs** (`output_config.format` json_schema, Sonnet) — and cost is accounted **before** the parse | Schema-valid JSON binds a typed `Analysis` directly; a refusal / bad body is still billed, never lost (the M3 live lesson) | **M4** |
+| D18 | **`run_post_analysis` returns `()`; the review screen re-fetches via `get_session`** (draft persisted to `analysis.json` on completion) | Honors the IPC contract; a mid-review crash keeps the draft; the cost re-fetch is never stale | **M4** |
+| D19 | **Action merge is Sonnet-primary; user-saved actions are always kept** (live commitments deduped against Sonnet/saved) | A `[+ Save action]` is never silently dropped; the user unchecks any dupe in review | **M4** |
+| D20 | **Crash/quit during post-analysis recovers cleanly** — `ending`/`analyzing` → `completed` transcript-only, `reviewing` → `completed` keeping the draft; **EXC-EMPTY ≈ 25 words** skips Sonnet | No dangling state; re-analysis is M5 | **M4** |
 
 ## Milestone overview
 
@@ -55,4 +59,4 @@ M4  Post-analysis       Sonnet extraction → review/edit → save
 M5  Manage & polish     dashboard, labels, settings, onboarding, error handling
 ```
 
-**Progress:** **M3 ✅ complete & merged** (PRs #9–#12) — Claude client + Keychain keys, live Haiku findings + F/C/S/Q toggles + cost + budget/failure handling, streamed Sonnet Ask-AI, save-action persistence; **78 unit tests**, clippy clean (a post-closeout hardening + coverage pass tightened teardown, streaming-error/refusal handling, and cost accounting — see [m3-plan.md §Post-closeout hardening](m3-plan.md#post-closeout-hardening)). M2 ✅ (PRs #4–#8) — capture → live two-sided transcript. M1 ✅ (PR #1); **M0 ✅** (s1–s4). **Next → [M4: Post-Analysis & Review](milestones.md#m4--post-analysis--review).**
+**Progress:** **M4 ✅ complete** (branch `feat/m4-post-analysis`) — post-analysis: End → Sonnet structured extraction (`ai/analyze.rs`) → merge with live/saved commitments → review/edit → Save & Close; the `ending → analyzing → reviewing → completed` state machine, EXC-API-POST / EXC-EMPTY, and the real Post screen. **96 unit tests**, clippy + svelte-check clean. Plan: [m4-plan.md](m4-plan.md). **M3 ✅** (PRs #9–#12) — Claude client + Keychain keys, live Haiku findings + F/C/S/Q toggles + cost, streamed Sonnet Ask-AI. M2 ✅ (PRs #4–#8) — capture → live two-sided transcript. M1 ✅ (PR #1); **M0 ✅** (s1–s4). **Next → [M5: Manage, Settings & Polish](milestones.md#m5--manage-settings--polish).**

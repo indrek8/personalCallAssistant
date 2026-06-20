@@ -57,11 +57,11 @@ export interface CreatedSession {
   session_id: string;
 }
 
-/** Returned by get_session — meta + transcript + (later) analysis. */
+/** Returned by get_session — meta + transcript + post-analysis (M4). */
 export interface SessionFull {
   meta: SessionMeta;
   transcript: TranscriptEntry[];
-  analysis: unknown | null;
+  analysis: Analysis | null;
 }
 
 /** Which side of the call an utterance/entry belongs to. */
@@ -204,6 +204,56 @@ export interface ChatTurn {
   question: string;
   answer: string;
   streaming: boolean;
+}
+
+// ---- Post-analysis (M4) — mirrors src-tauri/src/session/model.rs ------------
+
+/** Action kind. serde snake_case. */
+export type ActionType = "commitment" | "follow_up" | "suggestion";
+
+/** Action review status. serde snake_case. */
+export type ActionStatus =
+  | "pending"
+  | "in_progress"
+  | "done"
+  | "wont_do"
+  | "postponed";
+
+/** Whose action it is. */
+export type OwnerType = "mine" | "theirs";
+
+/** How the action entered the set. */
+export type CreatedBy = "ai_extracted" | "manual";
+
+/** One extracted action item (inside analysis.json). Mirrors Rust `Action`. */
+export interface AnalysisAction {
+  id: string;
+  title: string;
+  owner: string;
+  owner_type: OwnerType;
+  /** Serializes as `type` ("commitment" | "follow_up" | "suggestion"). */
+  type: ActionType;
+  status: ActionStatus;
+  deadline?: string | null;
+  transcript_quote: string;
+  transcript_t_ms: number;
+  notes?: string | null;
+  created_by: CreatedBy;
+  completed_at?: string | null;
+}
+
+/** Post-session analysis (analysis.json) — the reviewed/edited extraction. */
+export interface Analysis {
+  summary: string;
+  actions: AnalysisAction[];
+  decisions: string[];
+  key_topics: string[];
+  generated_at: string;
+}
+
+/** Payload of the `analysis-progress` event (`{ phase }`). */
+export interface AnalysisProgressEvent {
+  phase: string;
 }
 
 /** `settings.json` (the API key is never stored here). */

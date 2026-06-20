@@ -272,9 +272,9 @@ pub fn resume(app: &AppHandle, state: &AppState) -> AppResult<()> {
 }
 
 /// End the session: stop capture (finalize WAV), flush the final transcript, join
-/// the forwarders, and record the terminal status + duration. (M2 has no
-/// post-analysis yet, so the session is saved transcript-only as `completed`;
-/// M4 inserts analyzing → reviewing before this.)
+/// the forwarders, and record the duration + capture-phase cost. M4 finalizes to
+/// `ending` (not `completed`) — `run_post_analysis` then drives analyzing →
+/// reviewing, and `save_analysis` completes it.
 pub fn end(app: &AppHandle, state: &AppState) -> AppResult<()> {
     let mut live = state
         .live
@@ -315,7 +315,7 @@ pub fn end(app: &AppHandle, state: &AppState) -> AppResult<()> {
     // not depend on the AI subsystem's health — an AI-thread panic must never
     // prevent the session being saved.
     let total_cost = *live.cost.lock().unwrap_or_else(|e| e.into_inner());
-    if let Err(e) = storage::set_session_completed(&live.session_id, duration_ms, total_cost) {
+    if let Err(e) = storage::set_session_ended(&live.session_id, duration_ms, total_cost) {
         first_err.get_or_insert(e);
     }
     emit_capture_state(app, "ended", duration_ms);

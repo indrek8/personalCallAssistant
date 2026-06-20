@@ -137,12 +137,16 @@ One Claude client (`reqwest`, JSON). Model IDs come from settings; **Haiku** for
 
 > **Threading (D15):** the AI client is `reqwest::blocking` driven from **dedicated std threads**, not tokio — matching the rest of the backend (capture / STT / model_mgr). The batcher is its own thread (teed off the transcript-entry channel); `ask_ai` / `test_api_key` run via `spawn_blocking`. Streaming needs no async runtime — the blocking `Response` is a `Read`. (The §2 sketch below predates this and still shows the original "tokio task" shape.)
 
-**Post-analysis (Sonnet) — `ai/analyze.rs`:** full transcript + context + live annotations → strict JSON:
+**Post-analysis (Sonnet) — `ai/analyze.rs`:** full transcript + context + live annotations →
+**structured output** (`output_config.format` json_schema, D17), one-shot (`messages`, not streamed),
+`max_tokens: 8192`:
 ```json
 { "summary":"", "actions":[{"title":"","owner":"","deadline":"","transcript_quote":"","type":"commitment|follow_up|suggestion"}],
   "decisions":[""], "key_topics":[""] }
 ```
-Merge/dedupe with live commitments + `[+ Save action]` items before presenting.
+Merge/dedupe with live commitments + `[+ Save action]` items before presenting (D19 — user-saved
+always kept). Cost is accounted **before** the parse (D-cost), so a refusal / bad body is still billed;
+a `refusal` → EXC-API-POST, a `max_tokens` cut → salvage + a truncation note.
 
 **Cost/budget:** running total per session; when `total ≥ budget_cap` → emit `EXC-BUDGET`, pause live AI (transcript continues).
 
@@ -171,7 +175,7 @@ The complete frontend↔Rust surface. Frontend calls **commands**; Rust pushes *
 | `pause_capture` / `resume_capture` | — | `()` | |
 | `set_toggles` | `{f,c,s,q}` | `()` | affects next batch |
 | `ask_ai` | `{question}` | `{answer, cost}` | or streamed |
-| `end_session` | — | `()` | finalize → analyzing |
+| `end_session` | — | `()` | finalize → `ending` (Post screen then calls `run_post_analysis`) |
 | `run_post_analysis` | `{session_id}` | `()` | progress via events |
 | `save_analysis` | `{session_id, analysis}` | `()` | → completed |
 | `update_action_status` | `{session_id, action_id, status}` | `()` | patches analysis.json |

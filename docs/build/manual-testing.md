@@ -93,7 +93,7 @@ npm run tauri dev           # the real app (Rust backend + WebView)
 
 **Optional automated pre-checks** (fast confidence before manual work):
 ```sh
-cd src-tauri && cargo test      # 78 unit tests (VAD, resampler, recovery, model mgr, AI client/retry/SSE…)
+cd src-tauri && cargo test      # 96 unit tests (VAD, resampler, recovery, model mgr, AI client/retry/SSE, post-analysis extract/merge…)
 cd src-tauri && cargo clippy    # should be clean
 npm run check                   # svelte-check (types)
 ```
@@ -302,4 +302,38 @@ inert Ask-AI bar are now live. All cases below need a Claude API key set in Sett
 - [ ] Click `[+ Save action]` on a commitment → it flips to "✓ Saved" and a line is appended to `saved_actions.json` in the session folder (survives End → it's there for M4 to merge).
 
 **EXC mapping update:** EXC-KEY, EXC-BUDGET, EXC-API-LIVE are now implemented (M3); see the cases above.
-```
+
+---
+
+## M4 — Post-Analysis is now real (branch `feat/m4-post-analysis`)
+
+End no longer jumps to the dashboard — it routes to the **Post-Analysis** screen. The §0
+"End Session" stub row is now live (the Dashboard *detail pane* stays mock until M5). New
+per-session file: `analysis.json`.
+
+### T13 — End → process → review
+- [ ] Run a real capture (T4) with a Claude key set, speak a couple of commitments + a fact that conflicts with your prep notes, then **End**.
+- **Expected:** the screen switches to **Post-Analysis** with a brief "Analyzing your session…" spinner, then a review with a real **summary**, **extracted actions** (owners/deadlines/quotes — Sonnet + your saved/live commitments merged, no obvious dupes), **decisions**, and a meta rail whose cost now includes the Sonnet call — within ~30 s.
+- ✅ **Pass when:** the analysis reflects what was actually said; a `[+ Save action]` you clicked live appears in the list.
+
+### T14 — Edit / uncheck / add
+- [ ] Edit the summary text. Uncheck an action. Change an owner + due date. Delete one. Click **+ Add action** and type a title.
+- **Expected:** all edits are local until save; unchecked rows dim; the "N of M" count tracks included rows.
+- ✅ **Pass when:** the controls behave and nothing is lost while editing.
+
+### T15 — Save & Close → persist
+- [ ] **Save & Close** → returns to the Dashboard with the session `completed`. Quit + relaunch.
+- **Expected:** only the **checked** actions + edited summary were saved; the session survives restart with its analysis intact and the cost including the Sonnet call.
+- ✅ **Pass when:** `~/Library/Application Support/CallAssistant/sessions/{id}/analysis.json` holds your edited result and `metadata.json` is `completed`.
+
+### T16 — Analysis failure (`EXC-API-POST`)
+- [ ] Kill Wi-Fi, then End a session (or End with no/invalid key).
+- **Expected:** an **error panel** with **Retry analysis** / **Save without analysis** / **Back to dashboard**. *Save without analysis* still yields a `completed` transcript-only session; *Retry* re-runs once the network is back.
+- ✅ **Pass when:** a failed analysis never loses the transcript and always leaves a saveable session.
+
+### T17 — Empty session (`EXC-EMPTY`)
+- [ ] End a session with little/no speech (< ~25 words).
+- **Expected:** **no Sonnet call** — a minimal review ("Nothing substantial was captured…", no actions/decisions), still saveable.
+- ✅ **Pass when:** a near-silent session skips the model and saves cleanly.
+
+**EXC mapping update:** EXC-API-POST + EXC-EMPTY are now implemented (M4); see T13/T16/T17.

@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::session::model::{
-    SessionDraft, SessionFull, SessionMeta, SessionStatus, TranscriptEntry,
+    Analysis, SessionDraft, SessionFull, SessionMeta, SessionStatus, TranscriptEntry,
 };
 use schema::Settings;
 
@@ -160,6 +160,69 @@ pub fn saved_actions_path(id: &str) -> AppResult<PathBuf> {
     Ok(session_dir(id)?.join("saved_actions.json"))
 }
 
+/// Path to a session's post-analysis output (`analysis.json` — M4).
+pub fn analysis_path(id: &str) -> AppResult<PathBuf> {
+    Ok(session_dir(id)?.join("analysis.json"))
+}
+
+/// Persist a session's `analysis.json` atomically (M4 — the draft on analysis
+/// completion, then the final on Save & Close).
+pub fn write_analysis(id: &str, analysis: &Analysis) -> AppResult<()> {
+    write_json(&analysis_path(id)?, analysis)
+}
+
+/// Read a session's `analysis.json`, or `None` if absent/unreadable — a bad or old
+/// analysis must degrade to `None`, never fail `get_session` (EXC-CORRUPT).
+pub fn read_analysis(id: &str) -> AppResult<Option<Analysis>> {
+    read_analysis_at(&analysis_path(id)?)
+}
+
+fn read_analysis_at(path: &Path) -> AppResult<Option<Analysis>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    match read_json::<Analysis>(path) {
+        Ok(a) => Ok(Some(a)),
+        Err(e) => {
+            eprintln!("[storage] ignoring unreadable analysis at {}: {e}", path.display());
+            Ok(None)
+        }
+    }
+}
+
+/// Read a `.jsonl` log (one JSON object per line) into raw values: missing file →
+/// empty, bad lines skipped. Backs the post-analysis merge readers below (M4).
+fn read_json_lines(path: &Path) -> AppResult<Vec<serde_json::Value>> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let text = fs::read_to_string(path)?;
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<serde_json::Value>(line) {
+            Ok(v) => out.push(v),
+            Err(e) => eprintln!("[storage] skipping bad json line in {}: {e}", path.display()),
+        }
+    }
+    Ok(out)
+}
+
+/// All user-saved `[+ Save action]` commitments (`saved_actions.json`) — fed into
+/// the post-analysis merge (M4).
+pub fn read_saved_actions(id: &str) -> AppResult<Vec<serde_json::Value>> {
+    read_json_lines(&saved_actions_path(id)?)
+}
+
+/// All live-AI batch records (`ai_live.json`) — post-analysis pulls `findings[]`
+/// commitments from these to reconcile against Sonnet's extraction (M4).
+pub fn read_ai_live(id: &str) -> AppResult<Vec<serde_json::Value>> {
+    read_json_lines(&ai_live_path(id)?)
+}
+
 /// Create a new session directory and write `metadata.json`; return its id.
 pub fn create_session(draft: SessionDraft) -> AppResult<SessionMeta> {
     let id = Uuid::new_v4().to_string();
@@ -208,7 +271,7 @@ fn list_sessions_in(dir: &Path) -> AppResult<Vec<SessionMeta>> {
     Ok(out)
 }
 
-/// Load a single session's metadata (+ placeholders for transcript/analysis).
+/// Load a single session's full record: metadata + transcript + post-analysis.
 pub fn get_session(id: &str) -> AppResult<SessionFull> {
     let meta_file = metadata_path(id)?;
     if !meta_file.exists() {
@@ -216,10 +279,11 @@ pub fn get_session(id: &str) -> AppResult<SessionFull> {
     }
     let meta: SessionMeta = read_json(&meta_file)?;
     let transcript = read_transcript_at(&transcript_path(id)?)?;
+    let analysis = read_analysis(id)?;
     Ok(SessionFull {
         meta,
         transcript,
-        analysis: None,
+        analysis,
     })
 }
 
@@ -307,21 +371,36 @@ pub fn set_session_status(id: &str, status: SessionStatus) -> AppResult<()> {
     write_json(&path, &meta)
 }
 
-/// Mark a session completed with its final recorded duration + total API cost.
-pub fn set_session_completed(id: &str, duration_ms: u64, total_api_cost: f64) -> AppResult<()> {
+/// Mark a session `ending` with its final recorded duration + capture-phase API
+/// cost (M4). Capture is done but post-analysis hasn't run; the session then moves
+/// `analyzing → reviewing → completed`. Splits the old straight-to-`completed`
+/// path so the post-analysis states are actually reachable.
+pub fn set_session_ended(id: &str, duration_ms: u64, total_api_cost: f64) -> AppResult<()> {
     let path = metadata_path(id)?;
     let mut meta: SessionMeta = read_json(&path)?;
-    meta.status = SessionStatus::Completed;
+    meta.status = SessionStatus::Ending;
     meta.duration_ms = duration_ms;
     meta.total_api_cost = total_api_cost;
     write_json(&path, &meta)
 }
 
+/// Add `delta` USD to a session's running `total_api_cost`; returns the new total.
+/// Post-analysis (Sonnet) bills onto the capture-phase total this way (M4).
+pub fn add_api_cost(id: &str, delta: f64) -> AppResult<f64> {
+    let path = metadata_path(id)?;
+    let mut meta: SessionMeta = read_json(&path)?;
+    meta.total_api_cost += delta;
+    let total = meta.total_api_cost;
+    write_json(&path, &meta)?;
+    Ok(total)
+}
+
 /// On boot, recover sessions left mid-flight by a crash/force-quit (EXC-CRASH):
 /// repair the (possibly unfinalized) WAV header and mark the session terminal so
 /// it never stays stuck as `recording`. The WAV + `transcript.jsonl` were written
-/// incrementally, so the data survives. Returns the recovered session ids.
-/// (M4 will route these to re-analysis instead of straight to `completed`.)
+/// incrementally, so the data survives. Returns the recovered session ids. A
+/// crashed post-analysis (`ending`/`analyzing`) finalizes transcript-only; a quit
+/// mid-`reviewing` finalizes keeping its draft `analysis.json` (M4; re-run is M5).
 pub fn recover_stale_sessions() -> AppResult<Vec<String>> {
     recover_stale_sessions_in(&sessions_dir()?)
 }
@@ -353,6 +432,7 @@ fn recover_stale_sessions_in(dir: &Path) -> AppResult<Vec<String>> {
                 | SessionStatus::Paused
                 | SessionStatus::Ending
                 | SessionStatus::Analyzing
+                | SessionStatus::Reviewing
         ) || (meta.status == SessionStatus::Draft && wav_has_data(&wav));
         if !stale {
             continue;
@@ -546,6 +626,86 @@ mod tests {
         assert_eq!(rec_after.duration_ms, 0);
         let draft_after: SessionMeta = read_json(&d.join("metadata.json")).unwrap();
         assert_eq!(draft_after.status, SessionStatus::Draft);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn analysis_round_trips_and_read_tolerates_missing_or_corrupt() {
+        use crate::session::model::{Action, ActionStatus, ActionType, Analysis, CreatedBy, OwnerType};
+        let dir = std::env::temp_dir().join(format!("ca_an_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("analysis.json");
+
+        let a = Analysis {
+            summary: "Agreed on the Aug deadline.".into(),
+            actions: vec![Action {
+                id: "x".into(),
+                title: "Send timeline".into(),
+                owner: "Me".into(),
+                owner_type: OwnerType::Mine,
+                kind: ActionType::Commitment,
+                status: ActionStatus::Pending,
+                deadline: Some("2026-04-05".into()),
+                transcript_quote: "I'll send it".into(),
+                transcript_t_ms: 10,
+                notes: None,
+                created_by: CreatedBy::AiExtracted,
+                completed_at: None,
+            }],
+            decisions: vec!["Deadline → Aug".into()],
+            key_topics: vec!["timeline".into()],
+            generated_at: "2026-06-20T00:00:00Z".into(),
+        };
+        write_json(&path, &a).unwrap();
+        let back = read_analysis_at(&path).unwrap().expect("present");
+        assert_eq!(back.summary, a.summary);
+        assert_eq!(back.actions.len(), 1);
+        assert_eq!(back.actions[0].kind, ActionType::Commitment);
+
+        // Corrupt → None (degrade, never fail get_session); missing → None.
+        fs::write(&path, b"{ not json").unwrap();
+        assert!(read_analysis_at(&path).unwrap().is_none());
+        fs::remove_file(&path).unwrap();
+        assert!(read_analysis_at(&path).unwrap().is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn json_lines_reader_skips_bad_and_missing() {
+        let dir = std::env::temp_dir().join(format!("ca_jsonl_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("saved_actions.json");
+        // Missing → empty.
+        assert!(read_json_lines(&path).unwrap().is_empty());
+        // One good line, one torn line, one blank line — only the good one survives.
+        fs::write(&path, b"{\"kind\":\"commitment\",\"title\":\"do x\"}\n{ torn\n\n").unwrap();
+        let got = read_json_lines(&path).unwrap();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0]["title"], "do x");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn recovers_a_reviewing_session_keeping_its_draft() {
+        // A quit mid-review finalizes to `completed` but must KEEP the draft analysis.
+        let base = std::env::temp_dir().join(format!("ca_recov_review_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let sdir = base.join("s");
+        fs::create_dir_all(&sdir).unwrap();
+        write_json(&sdir.join("metadata.json"), &session_meta("s", SessionStatus::Reviewing)).unwrap();
+        fs::write(sdir.join("analysis.json"), b"{\"summary\":\"draft\"}").unwrap();
+        let mut w = StereoWavWriter::create(&sdir.join("audio.wav")).unwrap();
+        for _ in 0..16_000 {
+            w.write_frame(0.0, 0.0).unwrap();
+        }
+        w.finalize().unwrap();
+
+        assert_eq!(recover_stale_sessions_in(&base).unwrap(), vec!["s".to_string()]);
+        let after: SessionMeta = read_json(&sdir.join("metadata.json")).unwrap();
+        assert_eq!(after.status, SessionStatus::Completed);
+        assert!(sdir.join("analysis.json").exists(), "draft analysis must survive recovery");
         let _ = fs::remove_dir_all(&base);
     }
 }

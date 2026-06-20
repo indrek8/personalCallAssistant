@@ -100,6 +100,91 @@ pub fn findings_schema() -> Value {
     })
 }
 
+// ----------------------------------------------------------------------------
+// Post-analysis (Sonnet) — full-transcript extraction (M4; technical-design §6)
+// ----------------------------------------------------------------------------
+
+/// Frozen post-analysis instructions. Unlike the live prompt this runs once over
+/// the whole transcript, so it asks for a summary + actions + decisions + topics.
+const ANALYSIS_SYSTEM: &str = "\
+You are an expert meeting analyst. You are given the full transcript of a finished call, \
+split into \"You\" (the user) and \"Remote\" (the other side), the user's prep notes, and \
+any commitments already detected live. Produce a faithful post-meeting analysis as a \
+single structured object:
+- summary: a tight, factual recap (3-6 sentences) of what was discussed and decided — no \
+fluff, no invented detail.
+- actions: concrete next steps. For each give a short title; the owner (\"Me\" for the user, \
+otherwise the person's name); a deadline if one was stated (else an empty string); the exact \
+transcript_quote it came from; and a type — \"commitment\" (a clear promise someone made), \
+\"follow_up\" (a task implied but not explicitly promised), or \"suggestion\" (a softer \
+recommended next step). Fold in the live-detected commitments; do not duplicate them.
+- decisions: concrete decisions reached, each a short sentence. Empty if none.
+- key_topics: a few short topic tags.
+Ground every item in the transcript. Prefer empty arrays over speculation. Return only the \
+structured object.";
+
+/// Build the post-analysis system prompt: frozen instructions + the prep notes.
+pub fn analysis_system_prompt(context_notes: Option<&str>) -> String {
+    match context_notes.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(notes) => format!("{ANALYSIS_SYSTEM}\n\nPREP NOTES:\n{notes}"),
+        None => format!("{ANALYSIS_SYSTEM}\n\nPREP NOTES:\n(none provided)"),
+    }
+}
+
+/// The post-analysis user turn: live-detected commitments to reconcile against,
+/// then the full transcript (You/Remote labelled).
+pub fn analysis_user_message(transcript: &[TranscriptEntry], live_annotations: &[String]) -> String {
+    let mut s = String::new();
+    if live_annotations.is_empty() {
+        s.push_str("LIVE-DETECTED COMMITMENTS: (none)\n\n");
+    } else {
+        s.push_str("LIVE-DETECTED COMMITMENTS (reconcile, do not duplicate):\n");
+        for a in live_annotations {
+            s.push_str(&format!("- {a}\n"));
+        }
+        s.push('\n');
+    }
+    s.push_str("FULL TRANSCRIPT:\n");
+    if transcript.is_empty() {
+        s.push_str("(empty)\n");
+    } else {
+        for e in transcript {
+            let who = match e.stream {
+                StreamTag::You => "You",
+                StreamTag::Remote => "Remote",
+            };
+            s.push_str(&format!("[{who}] {}\n", e.text.trim()));
+        }
+    }
+    s
+}
+
+/// JSON Schema for the post-analysis `output_config.format` (D17). Same
+/// structured-output rules as `findings_schema` (every object: `required` +
+/// `additionalProperties:false`); `deadline` is a possibly-empty string.
+pub fn analysis_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["summary", "actions", "decisions", "key_topics"],
+        "properties": {
+            "summary": { "type": "string" },
+            "actions": { "type": "array", "items": {
+                "type": "object", "additionalProperties": false,
+                "required": ["title", "owner", "deadline", "transcript_quote", "type"],
+                "properties": {
+                    "title": { "type": "string" },
+                    "owner": { "type": "string" },
+                    "deadline": { "type": "string" },
+                    "transcript_quote": { "type": "string" },
+                    "type": { "type": "string", "enum": ["commitment", "follow_up", "suggestion"] }
+                } } },
+            "decisions": { "type": "array", "items": { "type": "string" } },
+            "key_topics": { "type": "array", "items": { "type": "string" } }
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,5 +226,35 @@ mod tests {
         assert_eq!(s["type"], "object");
         assert_eq!(s["additionalProperties"], false);
         assert!(s["properties"]["commitments"].is_object());
+    }
+
+    #[test]
+    fn analysis_schema_is_strict_structured_output() {
+        let s = analysis_schema();
+        assert_eq!(s["type"], "object");
+        assert_eq!(s["additionalProperties"], false);
+        let action = &s["properties"]["actions"]["items"];
+        assert_eq!(action["additionalProperties"], false);
+        assert!(action["required"].as_array().unwrap().iter().any(|v| v == "type"));
+        assert_eq!(
+            action["properties"]["type"]["enum"],
+            json!(["commitment", "follow_up", "suggestion"])
+        );
+    }
+
+    #[test]
+    fn analysis_system_prompt_embeds_notes_or_none() {
+        assert!(analysis_system_prompt(Some("budget $5M")).contains("budget $5M"));
+        assert!(analysis_system_prompt(None).contains("(none provided)"));
+        assert!(analysis_system_prompt(Some("   ")).contains("(none provided)"));
+    }
+
+    #[test]
+    fn analysis_user_message_includes_annotations_and_transcript() {
+        let msg = analysis_user_message(&[e("we shipped it")], &["Sarah: send report".to_string()]);
+        assert!(msg.contains("LIVE-DETECTED COMMITMENTS"));
+        assert!(msg.contains("Sarah: send report"));
+        assert!(msg.contains("[You] we shipped it"));
+        assert!(analysis_user_message(&[e("hi")], &[]).contains("LIVE-DETECTED COMMITMENTS: (none)"));
     }
 }
