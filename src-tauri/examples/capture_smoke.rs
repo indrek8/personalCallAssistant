@@ -54,7 +54,7 @@ fn main() {
     println!("remote (R): {remote_id}");
     println!("capturing {seconds}s → {out}");
 
-    let session = match CaptureSession::start(mic_id, remote_id, out_path.clone()) {
+    let session = match CaptureSession::start(mic_id, remote_id, out_path.clone(), None) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("failed to start capture: {e}");

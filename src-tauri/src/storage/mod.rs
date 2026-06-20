@@ -20,7 +20,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::session::model::{SessionDraft, SessionFull, SessionMeta};
+use crate::session::model::{SessionDraft, SessionFull, SessionMeta, TranscriptEntry};
 use schema::Settings;
 
 /// Application support root: `~/Library/Application Support/CallAssistant/`.
@@ -130,6 +130,18 @@ fn metadata_path(id: &str) -> AppResult<PathBuf> {
     Ok(session_dir(id)?.join("metadata.json"))
 }
 
+/// Path to a session's incremental transcript (`transcript.jsonl`).
+pub fn transcript_path(id: &str) -> AppResult<PathBuf> {
+    Ok(session_dir(id)?.join("transcript.jsonl"))
+}
+
+/// Path to a session's ground-truth recording (`audio.wav`).
+// Wired by the SessionManager + crash recovery in PR3.
+#[allow(dead_code)]
+pub fn audio_path(id: &str) -> AppResult<PathBuf> {
+    Ok(session_dir(id)?.join("audio.wav"))
+}
+
 /// Create a new session directory and write `metadata.json`; return its id.
 pub fn create_session(draft: SessionDraft) -> AppResult<SessionMeta> {
     let id = Uuid::new_v4().to_string();
@@ -182,9 +194,62 @@ pub fn get_session(id: &str) -> AppResult<SessionFull> {
         return Err(AppError::NotFound(format!("session {id}")));
     }
     let meta: SessionMeta = read_json(&meta_file)?;
+    let transcript = read_transcript_at(&transcript_path(id)?)?;
     Ok(SessionFull {
         meta,
-        transcript: Vec::new(),
+        transcript,
         analysis: None,
     })
+}
+
+// ----------------------------------------------------------------------------
+// Transcript — incremental JSONL (one entry per line)
+// ----------------------------------------------------------------------------
+//
+// The transcript is the second ground-truth artifact (after the WAV). It is
+// written **append-only, one JSON object per line**, so a crash never corrupts a
+// half-written array — the §9 "JSONL internally, serialized to JSON on read"
+// option. `get_session` reads it back into the `SessionFull.transcript` array
+// the frontend already expects.
+
+/// Append one transcript entry as a JSON line. Creates the file if needed.
+pub fn append_transcript_entry_at(path: &Path, entry: &TranscriptEntry) -> AppResult<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut line = serde_json::to_string(entry)?;
+    line.push('\n');
+    let mut f = fs::OpenOptions::new().create(true).append(true).open(path)?;
+    f.write_all(line.as_bytes())?;
+    f.flush()?;
+    Ok(())
+}
+
+/// Append one transcript entry to a session's `transcript.jsonl`.
+// Convenience over `_at`; used by the SessionManager in PR3.
+#[allow(dead_code)]
+pub fn append_transcript_entry(id: &str, entry: &TranscriptEntry) -> AppResult<()> {
+    append_transcript_entry_at(&transcript_path(id)?, entry)
+}
+
+/// Read a `transcript.jsonl` back into entries. A missing file is an empty
+/// transcript; an unparseable line is skipped (logged) rather than failing the
+/// whole read — partial transcripts must always remain viewable.
+pub fn read_transcript_at(path: &Path) -> AppResult<Vec<TranscriptEntry>> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let text = fs::read_to_string(path)?;
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<TranscriptEntry>(line) {
+            Ok(entry) => out.push(entry),
+            Err(e) => eprintln!("[storage] skipping bad transcript line in {}: {e}", path.display()),
+        }
+    }
+    Ok(out)
 }

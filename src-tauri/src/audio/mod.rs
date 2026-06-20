@@ -6,10 +6,11 @@
 //!   BlackHole/Call Assistant = "remote") resampled to 16 kHz mono and written to
 //!   an incremental stereo ground-truth WAV (technical-design.md §4).
 //! - **WAV** (`wav`) — the incremental stereo writer + crash-recovery header repair.
-//!
-//! VAD segmentation + the Whisper feed tap onto the same 16 kHz streams in M2/PR2.
+//! - **VAD** (`vad`) — energy segmentation of each 16 kHz stream into utterances
+//!   for the Whisper feed (M2/PR2).
 
 pub mod capture;
+pub mod vad;
 pub mod wav;
 
 use serde::{Deserialize, Serialize};
@@ -40,6 +41,15 @@ pub enum StreamTag {
     You,
     /// The far side — captured from the BlackHole/Call Assistant loopback. WAV channel R.
     Remote,
+}
+
+/// A 16 kHz mono chunk of resampled capture audio, tagged by side. This is the
+/// hand-off from the capture worker to the STT feed (technical-design.md §2's
+/// `SampleChunk`): capture tees these to VAD → Whisper (PR2).
+#[derive(Debug, Clone)]
+pub struct SampleChunk {
+    pub tag: StreamTag,
+    pub samples: Vec<f32>,
 }
 
 /// Enumerate input devices, pairing each with the stable `id` the frontend uses

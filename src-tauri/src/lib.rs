@@ -8,8 +8,8 @@ pub mod audio;
 mod commands;
 pub mod error;
 mod events;
-mod session;
-mod stt;
+pub mod session;
+pub mod stt;
 mod storage;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
