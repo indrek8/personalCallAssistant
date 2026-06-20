@@ -4,6 +4,7 @@
 //! `SessionManager` (state machine, thread orchestration, persistence
 //! coordination) lands in M2+ per technical-design.md §3.
 
+pub mod manager;
 pub mod model;
 
 // Re-exported for ergonomic access from later milestones (SessionManager).

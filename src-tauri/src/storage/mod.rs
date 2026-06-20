@@ -20,7 +20,9 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::session::model::{SessionDraft, SessionFull, SessionMeta, TranscriptEntry};
+use crate::session::model::{
+    SessionDraft, SessionFull, SessionMeta, SessionStatus, TranscriptEntry,
+};
 use schema::Settings;
 
 /// Application support root: `~/Library/Application Support/CallAssistant/`.
@@ -252,4 +254,119 @@ pub fn read_transcript_at(path: &Path) -> AppResult<Vec<TranscriptEntry>> {
         }
     }
     Ok(out)
+}
+
+// ----------------------------------------------------------------------------
+// Status transitions + crash recovery
+// ----------------------------------------------------------------------------
+
+/// Patch a session's `status` in `metadata.json`.
+pub fn set_session_status(id: &str, status: SessionStatus) -> AppResult<()> {
+    let path = metadata_path(id)?;
+    let mut meta: SessionMeta = read_json(&path)?;
+    meta.status = status;
+    write_json(&path, &meta)
+}
+
+/// Mark a session completed with its final recorded duration.
+pub fn set_session_completed(id: &str, duration_ms: u64) -> AppResult<()> {
+    let path = metadata_path(id)?;
+    let mut meta: SessionMeta = read_json(&path)?;
+    meta.status = SessionStatus::Completed;
+    meta.duration_ms = duration_ms;
+    write_json(&path, &meta)
+}
+
+/// On boot, recover sessions left mid-flight by a crash/force-quit (EXC-CRASH):
+/// repair the (possibly unfinalized) WAV header and mark the session terminal so
+/// it never stays stuck as `recording`. The WAV + `transcript.jsonl` were written
+/// incrementally, so the data survives. Returns the recovered session ids.
+/// (M4 will route these to re-analysis instead of straight to `completed`.)
+pub fn recover_stale_sessions() -> AppResult<Vec<String>> {
+    recover_stale_sessions_in(&sessions_dir()?)
+}
+
+fn recover_stale_sessions_in(dir: &Path) -> AppResult<Vec<String>> {
+    let mut recovered = Vec::new();
+    if !dir.exists() {
+        return Ok(recovered);
+    }
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        let meta_file = entry.path().join("metadata.json");
+        if !meta_file.exists() {
+            continue;
+        }
+        let mut meta: SessionMeta = match read_json(&meta_file) {
+            Ok(m) => m,
+            Err(_) => continue, // unreadable metadata is left for EXC-CORRUPT (M5)
+        };
+        let stale = matches!(
+            meta.status,
+            SessionStatus::Recording
+                | SessionStatus::Paused
+                | SessionStatus::Ending
+                | SessionStatus::Analyzing
+        );
+        if !stale {
+            continue;
+        }
+        // Repair the WAV header and derive the duration from the frames on disk.
+        let wav = entry.path().join("audio.wav");
+        if wav.exists() {
+            if let Ok(frames) = crate::audio::wav::repair_header(&wav) {
+                meta.duration_ms = frames * 1000 / crate::audio::wav::SAMPLE_RATE as u64;
+            }
+        }
+        meta.status = SessionStatus::Completed;
+        write_json(&meta_file, &meta)?;
+        recovered.push(meta.id.clone());
+    }
+    Ok(recovered)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio::wav::StereoWavWriter;
+
+    #[test]
+    fn recovers_a_stale_recording_session() {
+        let base = std::env::temp_dir().join(format!("ca_recov_{}", std::process::id()));
+        let sdir = base.join("sess-1");
+        fs::create_dir_all(&sdir).unwrap();
+
+        let meta = SessionMeta {
+            id: "sess-1".into(),
+            status: SessionStatus::Recording,
+            name: Some("crashed".into()),
+            labels: vec![],
+            date: "2026-06-20T00:00:00Z".into(),
+            duration_ms: 0,
+            participants: vec![],
+            context_notes: None,
+            budget_cap: None,
+            total_api_cost: 0.0,
+        };
+        write_json(&sdir.join("metadata.json"), &meta).unwrap();
+
+        // 1 s of audio (16 000 frames @ 16 kHz).
+        let mut w = StereoWavWriter::create(&sdir.join("audio.wav")).unwrap();
+        for _ in 0..16_000 {
+            w.write_frame(0.1, -0.1).unwrap();
+        }
+        w.finalize().unwrap();
+
+        let recovered = recover_stale_sessions_in(&base).unwrap();
+        assert_eq!(recovered, vec!["sess-1".to_string()]);
+
+        let after: SessionMeta = read_json(&sdir.join("metadata.json")).unwrap();
+        assert_eq!(after.status, SessionStatus::Completed);
+        assert!((900..=1100).contains(&after.duration_ms), "duration {}", after.duration_ms);
+
+        let _ = fs::remove_dir_all(&base);
+    }
 }
