@@ -14,7 +14,7 @@ This project is planned as a journey between two points:
 
 We build the MVP first, then iterate it closer and closer to Version 1.
 
-> **Status:** **M1 complete & merged** — a running Tauri + Svelte + Rust app (six screens, real device enumeration + file storage). M0 spikes **s1/s2 validated** (Whisper real-time + 2-stream confirmed; `medium` is the default). Next: **M2 — the capture → live transcript engine**. See **[docs/build/milestones.md](docs/build/milestones.md)**.
+> **Status:** **M1 complete & merged** — a running Tauri + Svelte + Rust app (six screens, real device enumeration + file storage). **M0 complete** — all four spikes validated (Whisper real-time + 2-stream + dual-audio capture confirmed on hardware with zero cross-bleed; Claude Haiku/Sonnet API + cost accounting confirmed; `medium` is the default). Next: **M2 — the capture → live transcript engine**. See **[docs/build/milestones.md](docs/build/milestones.md)**.
 
 ## Repository map
 

@@ -19,7 +19,7 @@ Claude API plumbing, before any architecture is committed.
 | `s3_dual_audio`         | S3    | mic + BlackHole capture simultaneously → stereo WAV (L=you, R=remote) | [RUN-s3.md](RUN-s3.md) |
 | `s4_claude`      | S4    | one Haiku + one Sonnet Messages API call; parse text, tokens, cost | [RUN-s4.md](RUN-s4.md) |
 
-**All four spikes are built. Result (M0):** s1 `small` RTF 0.040 / `medium` 0.055; s2 concurrent ×2 RTF 0.032 → the **2-stream You/Remote model holds**.
+**All four spikes validated (M0 complete):** s1 `small` RTF 0.040 / `medium` 0.055; s2 concurrent ×2 RTF 0.032; s3 dual-capture on hardware → clean L/R attribution (idle channel -120 dBFS, zero cross-bleed) → the **2-stream You/Remote model holds**; s4 Claude Haiku + Sonnet calls returned, parsed, and cost-accounted ($0.000038 / $0.000114 per ping).
 
 ## Prerequisites
 
