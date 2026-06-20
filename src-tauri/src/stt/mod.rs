@@ -58,6 +58,7 @@ pub struct SttConfig {
 pub struct SttPipeline {
     chunk_tx: Sender<SampleChunk>,
     stop: Arc<AtomicBool>,
+    flush: Arc<AtomicBool>,
     worker: Option<JoinHandle<AppResult<()>>>,
 }
 
@@ -82,17 +83,20 @@ impl SttPipeline {
 
         let (chunk_tx, chunk_rx) = unbounded::<SampleChunk>();
         let stop = Arc::new(AtomicBool::new(false));
+        let flush = Arc::new(AtomicBool::new(false));
         let worker = {
             let stop = stop.clone();
+            let flush = flush.clone();
             thread::Builder::new()
                 .name("stt-whisper".into())
-                .spawn(move || run_stt(state, chunk_rx, stop, config))
+                .spawn(move || run_stt(state, chunk_rx, stop, flush, config))
                 .map_err(|e| AppError::Stt(format!("spawn stt thread: {e}")))?
         };
 
         Ok(Self {
             chunk_tx,
             stop,
+            flush,
             worker: Some(worker),
         })
     }
@@ -100,6 +104,12 @@ impl SttPipeline {
     /// A sender capture tees 16 kHz chunks into.
     pub fn sender(&self) -> Sender<SampleChunk> {
         self.chunk_tx.clone()
+    }
+
+    /// Force the segmenters to finalize their in-progress utterances (called on
+    /// pause so audio on either side of the gap isn't fused into one utterance).
+    pub fn flush(&self) {
+        self.flush.store(true, Ordering::Relaxed);
     }
 
     /// Stop: flush the segmenters, transcribe any final utterances, and join.
@@ -127,6 +137,7 @@ fn run_stt(
     mut state: WhisperState,
     chunk_rx: Receiver<SampleChunk>,
     stop: Arc<AtomicBool>,
+    flush: Arc<AtomicBool>,
     config: SttConfig,
 ) -> AppResult<()> {
     let mut you_seg = Segmenter::new(StreamTag::You);
@@ -137,6 +148,13 @@ fn run_stt(
     loop {
         if stop.load(Ordering::Relaxed) {
             break;
+        }
+        // Pause requested a flush: finalize in-progress utterances now so audio
+        // on either side of the gap isn't concatenated into one entry (H1).
+        if flush.swap(false, Ordering::Relaxed) {
+            you_seg.finish(&mut utts);
+            remote_seg.finish(&mut utts);
+            transcribe_pending(&mut state, &mut utts, &config)?;
         }
         match chunk_rx.recv_timeout(Duration::from_millis(100)) {
             Ok(chunk) => {
@@ -197,9 +215,19 @@ fn transcribe_pending(
     Ok(())
 }
 
+/// Inference threads for whisper.cpp — core count capped so we don't
+/// oversubscribe (Metal does the heavy lifting on Apple Silicon).
+fn whisper_threads() -> i32 {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .min(8) as i32
+}
+
 /// Run Whisper on one utterance; return `(text, mean_token_probability)`.
 fn transcribe(state: &mut WhisperState, samples: &[f32]) -> AppResult<(String, f32)> {
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    params.set_n_threads(whisper_threads());
     params.set_language(Some("en"));
     params.set_print_special(false);
     params.set_print_progress(false);

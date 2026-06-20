@@ -27,8 +27,8 @@ pub struct Settings {
 }
 
 /// The live-AI feature toggles (Fact-check / Commitments / Suggestions /
-/// unanswered-Questions).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+/// unanswered-Questions). Default is all-off (→ zero API calls until opt-in).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Toggles {
     #[serde(default)]
     pub f: bool,
@@ -38,18 +38,6 @@ pub struct Toggles {
     pub s: bool,
     #[serde(default)]
     pub q: bool,
-}
-
-impl Default for Toggles {
-    fn default() -> Self {
-        // Conservative default: nothing on → zero API calls until the user opts in.
-        Toggles {
-            f: false,
-            c: false,
-            s: false,
-            q: false,
-        }
-    }
 }
 
 impl Default for Settings {

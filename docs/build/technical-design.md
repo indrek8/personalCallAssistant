@@ -113,7 +113,7 @@ error.rs             # AppError (thiserror) → maps to EXC-* codes
 - **`whisper-rs`** (whisper.cpp), **`medium`** default (`small`/`base` selectable), Metal/Core ML on Apple Silicon.
 - **VAD segmentation:** energy-based (or `webrtc-vad`) cuts utterances on a silence gap (~600 ms) with a **hard max length** (~12 s) so we never wait forever or slice mid-word.
 - **WhisperWorker:** single dedicated thread; pulls utterances from a bounded queue (both streams interleaved, each tagged). For each: run whisper → `TranscriptEntry`.
-- **Output:** `{ id, t_ms, stream: "you"|"remote", text, confidence }` → append to `transcript.json` (incremental) + emit `transcript-entry`.
+- **Output:** `{ id, t_ms, stream: "you"|"remote", text, confidence }` → append to `transcript.jsonl` (incremental) + emit `transcript-entry`.
 - **Lag handling:** if the queue depth exceeds a threshold, emit `whisper-status{lagging:true}`; audio is still fully captured in WAV (EXC-WHISPER-LAG). Optionally drop to a faster model under sustained lag (config).
 
 ---
@@ -220,15 +220,15 @@ models/  ggml-{base|small|medium}.bin
 sessions/{uuid}/
   metadata.json                     # status, name, labels[], date, duration, participants, context_notes, budget_cap, total_api_cost
   audio.wav                         # stereo 16-bit: L=you, R=remote
-  transcript.json                   # appended: [{id,t_ms,stream,text,confidence}]
+  transcript.jsonl                   # appended: [{id,t_ms,stream,text,confidence}]
   ai_live.json                      # appended: [{id,t_ms,type,payload,model,tokens_in,tokens_out,cost,latency_ms}]
   chat.json                         # [{t,question,answer,cost}]
   analysis.json                     # {summary,actions[],decisions[],key_topics[],generated_at}
 ```
 
 - **`action`** (in `analysis.json`): `{id, title, owner, owner_type, type, status, deadline?, transcript_quote, transcript_t_ms, notes?, created_by, completed_at?}`.
-- **Incremental append strategy:** `transcript.json`/`ai_live.json` are written as JSON arrays via append-friendly rewrite (or JSONL internally, serialized to JSON on read) so the latest state survives a crash.
-- **Recovery scan (boot):** find sessions with `status ∈ {recording,paused,ending,analyzing}` → mark `recovering`, rebuild from `transcript.json`/`audio.wav`, route to POST_PROCESS, emit `session-recovered` (EXC-CRASH).
+- **Incremental append strategy:** `transcript.jsonl`/`ai_live.json` are written as JSON arrays via append-friendly rewrite (or JSONL internally, serialized to JSON on read) so the latest state survives a crash.
+- **Recovery scan (boot):** find sessions with `status ∈ {recording,paused,ending,analyzing}` → mark `recovering`, rebuild from `transcript.jsonl`/`audio.wav`, route to POST_PROCESS, emit `session-recovered` (EXC-CRASH).
 - **Forward-compatibility:** every entity has a stable `id`; storage stays normalized enough that v1's projects + global-actions view is an additive migration (see [../roadmap.md](../roadmap.md)).
 
 ---

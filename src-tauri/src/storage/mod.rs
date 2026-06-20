@@ -304,18 +304,20 @@ fn recover_stale_sessions_in(dir: &Path) -> AppResult<Vec<String>> {
             Ok(m) => m,
             Err(_) => continue, // unreadable metadata is left for EXC-CORRUPT (M5)
         };
+        // A normal stale state, OR a `Draft` that already has a real recording
+        // (a crash in the narrow window before the first `recording` write — M3).
+        let wav = entry.path().join("audio.wav");
         let stale = matches!(
             meta.status,
             SessionStatus::Recording
                 | SessionStatus::Paused
                 | SessionStatus::Ending
                 | SessionStatus::Analyzing
-        );
+        ) || (meta.status == SessionStatus::Draft && wav_has_data(&wav));
         if !stale {
             continue;
         }
         // Repair the WAV header and derive the duration from the frames on disk.
-        let wav = entry.path().join("audio.wav");
         if wav.exists() {
             if let Ok(frames) = crate::audio::wav::repair_header(&wav) {
                 meta.duration_ms = frames * 1000 / crate::audio::wav::SAMPLE_RATE as u64;
@@ -326,6 +328,11 @@ fn recover_stale_sessions_in(dir: &Path) -> AppResult<Vec<String>> {
         recovered.push(meta.id.clone());
     }
     Ok(recovered)
+}
+
+/// Whether a WAV file holds actual samples (more than just the 44-byte header).
+fn wav_has_data(path: &Path) -> bool {
+    fs::metadata(path).map(|m| m.len() > 44).unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -367,6 +374,87 @@ mod tests {
         assert_eq!(after.status, SessionStatus::Completed);
         assert!((900..=1100).contains(&after.duration_ms), "duration {}", after.duration_ms);
 
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    fn session_meta(id: &str, status: SessionStatus) -> SessionMeta {
+        SessionMeta {
+            id: id.into(),
+            status,
+            name: None,
+            labels: vec![],
+            date: "2026-06-20T00:00:00Z".into(),
+            duration_ms: 0,
+            participants: vec![],
+            context_notes: None,
+            budget_cap: None,
+            total_api_cost: 0.0,
+        }
+    }
+
+    #[test]
+    fn transcript_jsonl_round_trips_and_skips_bad_lines() {
+        use crate::audio::StreamTag;
+        let path = std::env::temp_dir().join(format!("ca_tr_{}.jsonl", std::process::id()));
+        let _ = fs::remove_file(&path);
+        let e1 = TranscriptEntry { id: "a".into(), t_ms: 0, stream: StreamTag::You, text: "hello".into(), confidence: 0.9 };
+        let e2 = TranscriptEntry { id: "b".into(), t_ms: 1500, stream: StreamTag::Remote, text: "world".into(), confidence: 0.8 };
+        append_transcript_entry_at(&path, &e1).unwrap();
+        append_transcript_entry_at(&path, &e2).unwrap();
+        // A torn/garbage line must be skipped, not fail the whole read.
+        use std::io::Write as _;
+        fs::OpenOptions::new().append(true).open(&path).unwrap().write_all(b"{ not valid json\n").unwrap();
+
+        let got = read_transcript_at(&path).unwrap();
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].text, "hello");
+        assert_eq!(got[1].t_ms, 1500);
+        assert_eq!(got[1].stream, StreamTag::Remote);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn recovers_a_draft_with_a_real_wav() {
+        // M3: a crash before the first `recording` status write leaves a Draft
+        // with a partial WAV — recovery must still rescue it.
+        let base = std::env::temp_dir().join(format!("ca_recov_draft_{}", std::process::id()));
+        let sdir = base.join("s");
+        fs::create_dir_all(&sdir).unwrap();
+        write_json(&sdir.join("metadata.json"), &session_meta("s", SessionStatus::Draft)).unwrap();
+        let mut w = StereoWavWriter::create(&sdir.join("audio.wav")).unwrap();
+        for _ in 0..16_000 {
+            w.write_frame(0.0, 0.0).unwrap();
+        }
+        w.finalize().unwrap();
+
+        assert_eq!(recover_stale_sessions_in(&base).unwrap(), vec!["s".to_string()]);
+        let after: SessionMeta = read_json(&sdir.join("metadata.json")).unwrap();
+        assert_eq!(after.status, SessionStatus::Completed);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn recovery_handles_no_wav_plain_draft_and_corrupt_metadata() {
+        let base = std::env::temp_dir().join(format!("ca_recov_misc_{}", std::process::id()));
+        // A stale Recording with no WAV is recovered (duration 0).
+        let r = base.join("rec");
+        fs::create_dir_all(&r).unwrap();
+        write_json(&r.join("metadata.json"), &session_meta("rec", SessionStatus::Recording)).unwrap();
+        // A plain Draft (no WAV) is left alone.
+        let d = base.join("draft");
+        fs::create_dir_all(&d).unwrap();
+        write_json(&d.join("metadata.json"), &session_meta("draft", SessionStatus::Draft)).unwrap();
+        // Unreadable metadata is skipped without panicking.
+        let bad = base.join("bad");
+        fs::create_dir_all(&bad).unwrap();
+        fs::write(bad.join("metadata.json"), b"{ corrupt").unwrap();
+
+        assert_eq!(recover_stale_sessions_in(&base).unwrap(), vec!["rec".to_string()]);
+        let rec_after: SessionMeta = read_json(&r.join("metadata.json")).unwrap();
+        assert_eq!(rec_after.status, SessionStatus::Completed);
+        assert_eq!(rec_after.duration_ms, 0);
+        let draft_after: SessionMeta = read_json(&d.join("metadata.json")).unwrap();
+        assert_eq!(draft_after.status, SessionStatus::Draft);
         let _ = fs::remove_dir_all(&base);
     }
 }

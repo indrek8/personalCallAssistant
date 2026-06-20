@@ -49,6 +49,17 @@ pub struct CaptureSummary {
     pub wav_path: PathBuf,
 }
 
+/// A device-change notice from the capture worker (EXC-DEV-DROP). The manager
+/// turns these into `device-changed` / `app-error` events for the UI.
+#[derive(Debug, Clone)]
+pub enum CaptureEvent {
+    /// A stream's device disconnected and capture fell back to the default.
+    FellBack { tag: StreamTag, device: String },
+    /// A stream's device disconnected and no fallback was available; that side
+    /// stays silent for the rest of the session.
+    Lost { tag: StreamTag },
+}
+
 // ----------------------------------------------------------------------------
 // Pure DSP (unit-tested without hardware)
 // ----------------------------------------------------------------------------
@@ -155,6 +166,7 @@ fn build_input_stream(
     tag: StreamTag,
     tx: Sender<RawChunk>,
     paused: Arc<AtomicBool>,
+    lost_tx: Sender<StreamTag>,
 ) -> AppResult<(cpal::Stream, u32)> {
     let supported = device
         .default_input_config()
@@ -164,12 +176,19 @@ fn build_input_stream(
     let in_channels = config.channels as usize;
     let in_rate = config.sample_rate.0;
 
-    let err_fn = |e| eprintln!("[audio] stream error: {e}");
-
     macro_rules! make_stream {
         ($ty:ty, $conv:expr) => {{
             let tx = tx.clone();
             let paused = paused.clone();
+            let lost_tx = lost_tx.clone();
+            // A device-unavailable error (e.g. the mic was unplugged) signals the
+            // worker to fall back to the default device (EXC-DEV-DROP).
+            let err_fn = move |e: cpal::StreamError| {
+                eprintln!("[audio] {tag:?} stream error: {e}");
+                if matches!(e, cpal::StreamError::DeviceNotAvailable) {
+                    let _ = lost_tx.send(tag);
+                }
+            };
             device
                 .build_input_stream(
                     &config,
@@ -192,7 +211,7 @@ fn build_input_stream(
     let stream = match sample_format {
         SampleFormat::F32 => make_stream!(f32, |s: f32| s),
         SampleFormat::I16 => make_stream!(i16, |s: i16| s as f32 / i16::MAX as f32),
-        SampleFormat::U16 => make_stream!(u16, |s: u16| (s as f32 / u16::MAX as f32) * 2.0 - 1.0),
+        SampleFormat::U16 => make_stream!(u16, |s: u16| (s as f32 - 32768.0) / 32768.0),
         other => {
             return Err(AppError::Audio(format!(
                 "unsupported sample format on {tag:?} stream: {other:?}"
@@ -225,6 +244,7 @@ impl CaptureSession {
         remote_id: String,
         wav_path: PathBuf,
         stt_tx: Option<Sender<SampleChunk>>,
+        event_tx: Option<Sender<CaptureEvent>>,
     ) -> AppResult<Self> {
         let paused = Arc::new(AtomicBool::new(false));
         let stop = Arc::new(AtomicBool::new(false));
@@ -236,7 +256,9 @@ impl CaptureSession {
             thread::Builder::new()
                 .name("audio-capture".into())
                 .spawn(move || {
-                    run_capture(mic_id, remote_id, wav_path, paused, stop, ready_tx, stt_tx)
+                    run_capture(
+                        mic_id, remote_id, wav_path, paused, stop, ready_tx, stt_tx, event_tx,
+                    )
                 })
                 .map_err(|e| AppError::Audio(format!("spawn capture thread: {e}")))?
         };
@@ -299,6 +321,7 @@ impl Drop for CaptureSession {
 
 /// The worker thread: resolve devices, open streams + WAV, then resample and
 /// write until `stop`. Errors during setup are reported via `ready_tx`.
+#[allow(clippy::too_many_arguments)]
 fn run_capture(
     mic_id: String,
     remote_id: String,
@@ -307,19 +330,25 @@ fn run_capture(
     stop: Arc<AtomicBool>,
     ready_tx: Sender<AppResult<()>>,
     stt_tx: Option<Sender<SampleChunk>>,
+    event_tx: Option<Sender<CaptureEvent>>,
 ) -> AppResult<CaptureSummary> {
+    // The worker keeps `tx` so it can rebuild a stream on device fallback;
+    // `lost_tx` carries device-unavailable signals from the cpal error callbacks.
+    let (tx, rx) = unbounded::<RawChunk>();
+    let (lost_tx, lost_rx) = unbounded::<StreamTag>();
+
     // --- Setup: any failure here is reported to the caller via ready_tx. ---
     let setup = (|| -> AppResult<_> {
         let mic = super::find_input_device_by_id(&mic_id)?;
         let remote = super::find_input_device_by_id(&remote_id)?;
         let writer = StereoWavWriter::create(&wav_path)?;
 
-        let (tx, rx) = unbounded::<RawChunk>();
-        let (mic_stream, mic_rate) =
-            build_input_stream(&mic, StreamTag::You, tx.clone(), paused.clone())?;
-        let (remote_stream, remote_rate) =
-            build_input_stream(&remote, StreamTag::Remote, tx.clone(), paused.clone())?;
-        drop(tx); // only the streams hold senders now → rx disconnects when they drop
+        let (mic_stream, mic_rate) = build_input_stream(
+            &mic, StreamTag::You, tx.clone(), paused.clone(), lost_tx.clone(),
+        )?;
+        let (remote_stream, remote_rate) = build_input_stream(
+            &remote, StreamTag::Remote, tx.clone(), paused.clone(), lost_tx.clone(),
+        )?;
 
         let you_rs = StreamResampler::new(mic_rate, SAMPLE_RATE)?;
         let remote_rs = StreamResampler::new(remote_rate, SAMPLE_RATE)?;
@@ -331,10 +360,10 @@ fn run_capture(
             .play()
             .map_err(|e| AppError::Audio(format!("remote play: {e}")))?;
 
-        Ok((writer, rx, mic_stream, remote_stream, you_rs, remote_rs))
+        Ok((writer, mic_stream, remote_stream, you_rs, remote_rs))
     })();
 
-    let (mut writer, rx, mic_stream, remote_stream, mut you_rs, mut remote_rs) = match setup {
+    let (mut writer, mic_stream, remote_stream, mut you_rs, mut remote_rs) = match setup {
         Ok(v) => {
             let _ = ready_tx.send(Ok(()));
             v
@@ -345,15 +374,34 @@ fn run_capture(
         }
     };
 
+    // Streams held in Options so a dropped device can be replaced on fallback.
+    let mut mic_stream = Some(mic_stream);
+    let mut remote_stream = Some(remote_stream);
+    let mut you_attempts: u8 = 0;
+    let mut remote_attempts: u8 = 0;
+
     let mut you_q: VecDeque<f32> = VecDeque::new();
     let mut remote_q: VecDeque<f32> = VecDeque::new();
     let mut scratch: Vec<f32> = Vec::new();
     let mut frames_since_flush: u64 = 0;
 
-    // --- Main loop: resample + interleave + write until stop. ---
+    // --- Main loop: handle device drops, then resample + interleave + write. ---
     loop {
         if stop.load(Ordering::Relaxed) {
             break;
+        }
+        // EXC-DEV-DROP: a stream's device vanished → rebuild it on the default.
+        while let Ok(tag) = lost_rx.try_recv() {
+            match tag {
+                StreamTag::You => rebuild_on_default(
+                    tag, &tx, &lost_tx, &paused, &mut mic_stream, &mut you_rs,
+                    &mut you_attempts, event_tx.as_ref(),
+                ),
+                StreamTag::Remote => rebuild_on_default(
+                    tag, &tx, &lost_tx, &paused, &mut remote_stream, &mut remote_rs,
+                    &mut remote_attempts, event_tx.as_ref(),
+                ),
+            }
         }
         match rx.recv_timeout(Duration::from_millis(100)) {
             Ok(chunk) => {
@@ -369,9 +417,10 @@ fn run_capture(
         }
     }
 
-    // --- Teardown: stop callbacks, drain buffered audio, flush tails. ---
+    // --- Teardown: drop streams to stop callbacks, drain buffered audio, flush. ---
     drop(mic_stream);
     drop(remote_stream);
+    drop(tx);
     while let Ok(chunk) = rx.try_recv() {
         process_chunk(&chunk, &mut you_rs, &mut remote_rs, &mut you_q, &mut remote_q, &mut scratch, stt_tx.as_ref())?;
         drain_interleave(&mut writer, &mut you_q, &mut remote_q)?;
@@ -389,6 +438,57 @@ fn run_capture(
         frames_written,
         wav_path,
     })
+}
+
+/// Rebuild a dropped stream on the current default input device (EXC-DEV-DROP).
+/// Retries are capped per side so a flapping device can't spin the loop; if no
+/// fallback is possible, that side goes silent and a `Lost` event is emitted.
+#[allow(clippy::too_many_arguments)]
+fn rebuild_on_default(
+    tag: StreamTag,
+    tx: &Sender<RawChunk>,
+    lost_tx: &Sender<StreamTag>,
+    paused: &Arc<AtomicBool>,
+    stream_slot: &mut Option<cpal::Stream>,
+    resampler: &mut StreamResampler,
+    attempts: &mut u8,
+    event_tx: Option<&Sender<CaptureEvent>>,
+) {
+    *stream_slot = None; // drop the dead stream → its callbacks stop
+    *attempts += 1;
+    let notify_lost = move || {
+        if let Some(tx) = event_tx {
+            let _ = tx.send(CaptureEvent::Lost { tag });
+        }
+    };
+    if *attempts > 5 {
+        return notify_lost();
+    }
+    let device = match super::default_input_device() {
+        Ok(d) => d,
+        Err(_) => return notify_lost(),
+    };
+    let device_name = device.name().unwrap_or_else(|_| "default".to_string());
+    let (stream, rate) =
+        match build_input_stream(&device, tag, tx.clone(), paused.clone(), lost_tx.clone()) {
+            Ok(v) => v,
+            Err(_) => return notify_lost(),
+        };
+    let new_rs = match StreamResampler::new(rate, SAMPLE_RATE) {
+        Ok(r) => r,
+        Err(_) => return notify_lost(),
+    };
+    if stream.play().is_err() {
+        return notify_lost();
+    }
+    *stream_slot = Some(stream);
+    *resampler = new_rs;
+    if let Some(tx) = event_tx {
+        let _ = tx.send(CaptureEvent::FellBack {
+            tag,
+            device: device_name,
+        });
+    }
 }
 
 /// Resample one tagged chunk to 16 kHz, tee it to the STT feed (if any), and

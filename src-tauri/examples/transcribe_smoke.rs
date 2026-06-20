@@ -137,7 +137,7 @@ fn run_live(seconds_arg: Option<&String>, model_arg: Option<&String>) {
     let (pipeline, printer) = start_pipeline(model_path);
     let wav = std::env::temp_dir().join("callassistant_transcribe_smoke.wav");
     let session =
-        CaptureSession::start(mic.id.clone(), remote_id, wav.clone(), Some(pipeline.sender()))
+        CaptureSession::start(mic.id.clone(), remote_id, wav.clone(), Some(pipeline.sender()), None)
             .unwrap_or_else(|e| {
                 eprintln!("failed to start capture: {e}");
                 std::process::exit(1);

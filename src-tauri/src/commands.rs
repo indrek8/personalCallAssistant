@@ -135,9 +135,15 @@ pub fn run_preflight(_session_id: String) -> AppResult<PreflightResult> {
     let settings = storage::get_settings()?;
     let mut checks = Vec::new();
 
-    match audio::default_input_id() {
-        Ok(_) => checks.push(check("mic", "Microphone", "ok", "Input device available", None)),
-        Err(_) => checks.push(check("mic", "Microphone", "fail", "No input device found", None)),
+    // Mirror start()'s logic: the selected device if present, else the default.
+    let mic_ok = match &settings.capture_device_id {
+        Some(id) if audio::find_input_device_by_id(id).is_ok() => true,
+        _ => audio::default_input_id().is_ok(),
+    };
+    if mic_ok {
+        checks.push(check("mic", "Microphone", "ok", "Input device available", None));
+    } else {
+        checks.push(check("mic", "Microphone", "fail", "No input device found", None));
     }
 
     match audio::find_remote_loopback_id() {

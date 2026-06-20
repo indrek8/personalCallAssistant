@@ -138,21 +138,19 @@ impl Segmenter {
                 self.cur_start_sample = self.total_samples;
                 // stay in_speech
             }
+        } else if is_speech {
+            let pre: Vec<f32> = self.preroll.drain(..).collect();
+            self.cur_preroll_len = pre.len();
+            self.cur_start_sample = frame_start.saturating_sub(pre.len() as u64);
+            self.cur = pre;
+            self.cur.extend_from_slice(frame);
+            self.in_speech = true;
+            self.trailing_silence = 0;
         } else {
-            if is_speech {
-                let pre: Vec<f32> = self.preroll.drain(..).collect();
-                self.cur_preroll_len = pre.len();
-                self.cur_start_sample = frame_start.saturating_sub(pre.len() as u64);
-                self.cur = pre;
-                self.cur.extend_from_slice(frame);
-                self.in_speech = true;
-                self.trailing_silence = 0;
-            } else {
-                self.preroll.extend(frame.iter().copied());
-                let max_pre = ms_to_samples(PREROLL_MS);
-                while self.preroll.len() > max_pre {
-                    self.preroll.pop_front();
-                }
+            self.preroll.extend(frame.iter().copied());
+            let max_pre = ms_to_samples(PREROLL_MS);
+            while self.preroll.len() > max_pre {
+                self.preroll.pop_front();
             }
         }
     }
@@ -273,5 +271,10 @@ mod tests {
         sig.extend(tone(0.05, 0.3)); // 50 ms < 200 ms min
         sig.extend(silence(0.8));
         assert_eq!(run(&sig).len(), 0);
+    }
+
+    #[test]
+    fn silence_only_yields_nothing() {
+        assert_eq!(run(&silence(3.0)).len(), 0);
     }
 }

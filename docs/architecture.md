@@ -167,7 +167,7 @@ Transcript chunks are sent to Claude based on the active toggles. All calls are 
     └── {session-id}/
         ├── metadata.json         # name, labels[], status, date, duration, participants, context_notes
         ├── audio.wav             # stereo 16-bit: L=you, R=remote
-        ├── transcript.json       # [{ t, stream: you|remote, text, confidence }]
+        ├── transcript.jsonl       # [{ t, stream: you|remote, text, confidence }]
         ├── ai_live.json          # live AI call logs (requests, responses, cost)
         ├── analysis.json         # post-session output (summary, actions, decisions)
         └── chat.json             # user Q&A log

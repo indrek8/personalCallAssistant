@@ -36,7 +36,7 @@ fn spec() -> hound::WavSpec {
 /// out-of-range values rather than letting them wrap.
 #[inline]
 fn to_i16(sample: f32) -> i16 {
-    (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16
+    (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16
 }
 
 /// Incremental stereo WAV writer over a buffered file.
@@ -236,5 +236,20 @@ mod tests {
         let samples: Vec<i16> = reader.samples::<i16>().map(|x| x.unwrap()).collect();
         assert_eq!(samples.len() as u64, n_frames * 2);
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn repair_rejects_malformed_files() {
+        let dir = std::env::temp_dir();
+        let small = dir.join(format!("ca_wav_small_{}.wav", std::process::id()));
+        fs::write(&small, b"tiny").unwrap(); // < 44 bytes
+        assert!(repair_header(&small).is_err());
+
+        let not_riff = dir.join(format!("ca_wav_notriff_{}.wav", std::process::id()));
+        fs::write(&not_riff, vec![0u8; 64]).unwrap(); // big enough, but no RIFF/WAVE
+        assert!(repair_header(&not_riff).is_err());
+
+        let _ = fs::remove_file(&small);
+        let _ = fs::remove_file(&not_riff);
     }
 }
