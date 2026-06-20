@@ -56,7 +56,7 @@ M0 Spikes ─► M1 Skeleton ─► M2 Capture→Transcript ─► M3 Live AI �
 
 **Goal:** start a session, capture both sides, see a live transcript, end and save. The heart of the product.
 
-> **Status:** ✅ **Complete & merged** (PRs #4–#7 + closeout) — all three acceptance criteria met. **20 unit tests** green, **clippy clean**; capture → VAD → Whisper → `transcript.jsonl` verified on-device; **EXC-DEV-DROP** (device drop → fallback to default) implemented. Two checks remain inherently manual (hardware): the real-call latency *feel*, and physically unplugging a device to exercise EXC-DEV-DROP live.
+> **Status:** ✅ **Complete & merged** (PRs #4–#7 + closeout) — all three acceptance criteria met. **20 unit tests** green at closeout (suite later expanded — see M3), **clippy clean**; capture → VAD → Whisper → `transcript.jsonl` verified on-device; **EXC-DEV-DROP** (device drop → fallback to default) implemented. Two checks remain inherently manual (hardware): the real-call latency *feel*, and physically unplugging a device to exercise EXC-DEV-DROP live.
 
 - [x] `audio/capture.rs`: dual `cpal` streams (mic + BlackHole), resample → 16 kHz mono (`rubato`).
 - [x] `audio/wav.rs`: incremental stereo WAV writer (L=you, R=remote) via `hound` (+ crash-recovery header repair).
@@ -80,7 +80,7 @@ M0 Spikes ─► M1 Skeleton ─► M2 Capture→Transcript ─► M3 Live AI �
 
 **Goal:** real-time fact-checks, commitments, suggestions, unanswered-Qs, plus Ask-AI — all cost-tracked.
 
-> **Status:** ✅ **Complete & merged** (PRs #9–#12) — Claude client + macOS-Keychain key mgmt (PR1), live Haiku findings + F/C/S/Q toggles + cost meter + EXC-BUDGET/EXC-API-LIVE (PR2), streamed Sonnet Ask-AI (PR3), and closeout — save-action persistence, SSE-parse test, doc reconciliation (PR4). **42 unit tests**, clippy clean. The on-device live-AI run (a real call with your key) is the remaining manual check. Plan: [m3-plan.md](m3-plan.md).
+> **Status:** ✅ **Complete & merged** (PRs #9–#12) — Claude client + macOS-Keychain key mgmt (PR1), live Haiku findings + F/C/S/Q toggles + cost meter + EXC-BUDGET/EXC-API-LIVE (PR2), streamed Sonnet Ask-AI (PR3), and closeout — save-action persistence, SSE-parse test, doc reconciliation (PR4). **78 unit tests**, clippy clean (expanded in a post-closeout hardening + coverage pass — teardown, streaming-error/refusal handling, cost accounting; see [m3-plan.md §Post-closeout hardening](m3-plan.md#post-closeout-hardening)). The on-device live-AI run (a real call with your key) is the remaining manual check. Plan: [m3-plan.md](m3-plan.md).
 
 - [x] `ai/mod.rs`: Claude `reqwest::blocking` client, cost accounting (incl. cache multipliers), retries/backoff, SSE streaming.
 - [x] `ai/live.rs`: `AiBatcher` (≥5 entries OR ≥30 s) → Haiku → **structured-output (json_schema)** findings (D12); defensive parse fallback.

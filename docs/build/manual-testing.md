@@ -1,12 +1,12 @@
 # MVP Build — Manual Test Plan
 
 > Hand-run verification of what's actually wired, milestone by milestone. Grounded
-> in the code as merged (M2 closeout, `dd846c7`), **not** the end-state intent in
+> in the code as merged (through M3 + the post-closeout hardening pass), **not** the end-state intent in
 > [flows.md](flows.md) — where the build is intentionally behind the spec, this doc
 > says so. Read alongside [milestones.md](milestones.md) (what's built) and
 > [flows.md](flows.md) §9 (the EXC-* contract these cases map to).
 >
-> **Current coverage: M0–M2.** M3 (Live AI), M4 (post-analysis), M5 (manage/polish)
+> **Current coverage: M0–M3.** M4 (post-analysis), M5 (manage/polish)
 > sections get appended as those milestones land.
 
 ---
@@ -93,7 +93,7 @@ npm run tauri dev           # the real app (Rust backend + WebView)
 
 **Optional automated pre-checks** (fast confidence before manual work):
 ```sh
-cd src-tauri && cargo test      # 20 unit tests (VAD, resampler, recovery, model mgr…)
+cd src-tauri && cargo test      # 78 unit tests (VAD, resampler, recovery, model mgr, AI client/retry/SSE…)
 cd src-tauri && cargo clippy    # should be clean
 npm run check                   # svelte-check (types)
 ```
@@ -136,7 +136,7 @@ Each case: **Steps → Expected → ✅ Pass when**. Check the box when it passe
   with a red **"Loopback device — set up the Multi-Output device"** row.
 - ✅ **Pass when:** Start is gated exactly on mic + loopback + model; a fixable failure
   offers the fix and clears on retry **without** creating duplicate sessions.
-- **Note:** there is **no** API-key or disk-space check in pre-flight yet (M3/§4 of flows).
+- **Note:** pre-flight now includes the **API-key presence** check (M3, EXC-KEY). There's still **no disk-space check** (§4 of flows), and it doesn't guard against the mic and loopback resolving to the **same device** (a misconfiguration where the system default input *is* BlackHole) — a known limitation.
 
 ### T4 — Capture → live two-sided transcript (the core)
 - [ ] **Steps:** Start a session. Speak a few sentences into your mic (the **You** side).
@@ -292,9 +292,11 @@ inert Ask-AI bar are now live. All cases below need a Claude API key set in Sett
 - [ ] Start with **F** + **C** on. Speak a commitment ("I'll send the report by Friday") and a claim that contradicts your prep notes → a **Commitment** and a **Fact-check** finding appear in the panel within a batch cycle (≤30 s); the cost meter ticks up.
 - [ ] Toggle **all four off** → **zero further API calls** (verify in the dev console). Toggle back on → analysis resumes (no retroactive re-run).
 - [ ] Kill Wi-Fi mid-call → the transcript keeps flowing; after 3 failed batches an **EXC-API-LIVE** banner appears and live AI goes quiet. Set a low budget cap → **EXC-BUDGET** pauses live AI at the cap.
+- [ ] **End mid-batch** (click End right after speaking, while a Haiku call may be in flight) → the session finalizes promptly (≤ ~20 s worst case, not minutes); WAV + transcript are saved and a teardown-cancelled batch isn't logged as a failure.
 
 ### M3-3 — Ask-AI (PR3)
 - [ ] Type "summarize what we've agreed so far" → the answer **streams in** word-by-word in the card above the bar; cost increments; `chat.json` is written.
+- **Hardening:** a refusal or a `max_tokens` cut is surfaced (a clear "declined" message / a truncation note), and a dropped or mid-stream-errored stream shows an error — never a blank or silently clipped answer.
 
 ### M3-4 — Save action (PR4)
 - [ ] Click `[+ Save action]` on a commitment → it flips to "✓ Saved" and a line is appended to `saved_actions.json` in the session folder (survives End → it's there for M4 to merge).

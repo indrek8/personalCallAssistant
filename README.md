@@ -14,7 +14,7 @@ This project is planned as a journey between two points:
 
 We build the MVP first, then iterate it closer and closer to Version 1.
 
-> **Status:** **M3 complete & merged** (PRs #9–#12) — the live-AI layer: Claude client + macOS-Keychain key management, real-time Haiku findings with F/C/S/Q toggles + cost meter + budget/failure handling, and a streamed Sonnet Ask-AI. 42 unit tests, clippy clean; the on-device live-AI run (your key + a real call) is the remaining manual check. **M2 complete** — the capture → live two-sided transcript engine (dual-stream → 16 kHz stereo WAV, VAD → Whisper, IPC + Live UI, pre-flight, model mgmt, crash recovery, EXC-DEV-DROP). **M1/M0 complete** — app shell; all four spikes validated. Next: **M4 — Post-analysis** (Sonnet extraction → review → save). See **[docs/build/milestones.md](docs/build/milestones.md)**.
+> **Status:** **M3 complete & merged** (PRs #9–#12) — the live-AI layer: Claude client + macOS-Keychain key management, real-time Haiku findings with F/C/S/Q toggles + cost meter + budget/failure handling, and a streamed Sonnet Ask-AI. 78 unit tests, clippy clean (a post-merge hardening pass tightened teardown, SSE error/refusal handling, and cost accounting, and broadened M1–M3 coverage); the on-device live-AI run (your key + a real call) is the remaining manual check. **M2 complete** — the capture → live two-sided transcript engine (dual-stream → 16 kHz stereo WAV, VAD → Whisper, IPC + Live UI, pre-flight, model mgmt, crash recovery, EXC-DEV-DROP). **M1/M0 complete** — app shell; all four spikes validated. Next: **M4 — Post-analysis** (Sonnet extraction → review → save). See **[docs/build/milestones.md](docs/build/milestones.md)**.
 
 ## Repository map
 

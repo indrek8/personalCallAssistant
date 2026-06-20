@@ -347,7 +347,10 @@ pub async fn ask_ai(
     .map_err(|e| AppError::Api(format!("ask task failed: {e}")))?;
     let (answer, cost) = result?;
 
-    // Fold the chat cost into the running total + push the cost meter.
+    // Fold the chat cost into the running total + push the cost meter. Ask-AI is
+    // intentionally not budget-gated: the EXC-BUDGET cap throttles *automatic*
+    // live analysis only — an explicit user question always runs. Its cost still
+    // counts toward the session total (and can trip the live cap on the next batch).
     let total = {
         let mut c = cost_arc.lock().unwrap();
         *c += cost;

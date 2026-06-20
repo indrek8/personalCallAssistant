@@ -11,8 +11,10 @@
 
 ✅ **Complete & merged.** PR1 (#9) Claude client + Keychain keys · PR2 (#10) live Haiku
 findings + toggles + cost + budget · PR3 (#11) streamed Sonnet Ask-AI · PR4 (#12) closeout
-— save-action persistence, SSE-parse test, doc reconciliation. **42 unit tests**, clippy
-clean. The on-device live-AI run (a real call with your key) is the remaining manual check.
+— save-action persistence, SSE-parse test, doc reconciliation. **78 unit tests**, clippy
+clean. A post-closeout hardening pass (see *Post-closeout hardening* below) tightened
+teardown, streaming-error/refusal handling, and cost accounting, and broadened M1–M3
+coverage. The on-device live-AI run (a real call with your key) is the remaining manual check.
 
 ---
 
@@ -81,8 +83,15 @@ Continuing the [README decisions log](README.md#decisions-log) (D1–D10):
 |---|---|---|
 | `message_start` | `message.usage.input_tokens` (+ `cache_read_input_tokens`) | seed input-token count |
 | `content_block_delta` | `delta.type=="text_delta"` → `delta.text` | append + emit `ai-chat-token{token}` |
-| `message_delta` | `usage.output_tokens` | final output-token count |
+| `message_delta` | `usage.output_tokens` **+ `delta.stop_reason`** | final output-token count; capture the stop reason |
+| `error` (any frame) | `error.type` / `error.message` | **abort** — surface the error, don't return the partial answer as if complete |
 | `message_stop` | — | compute cost, emit `ai-chat-done{answer,cost}` |
+
+> **Stop-reason handling (hardening):** a streamed turn is an HTTP 200 even when it
+> stops short. `chat::ask` maps `stop_reason` to user-facing text — a `refusal` shows a
+> clear "declined" message (partial discarded), a `max_tokens` cut appends a truncation
+> note, and a dropped/empty stream is a hard error — instead of a blank or silently
+> clipped answer.
 
 `reqwest::blocking::Response` is a `Read`, so the chat thread reads the SSE body
 line-by-line and emits as it goes — no async runtime needed.
@@ -102,9 +111,12 @@ cost = ( in_tok            * in_rate
 | `claude-sonnet-4-6` | 3.00 | 15.00 |
 
 **Errors** → EXC mapping: `401`→**EXC-KEY**; `429`/`500`/`529`→retry with
-`retry-after` honored + exponential backoff (cap N); schema/parse failure on a live
-batch → **discard the batch, log, continue** (transcript untouched); N consecutive
-live failures → **EXC-API-LIVE** auto-disable with a notice.
+`retry-after` honored + exponential backoff (cap N; **retries/backoff short-circuit on
+session teardown** so End never blocks behind them); schema/parse failure on a live
+batch → **discard the batch, log, continue** (transcript untouched; the call is still
+billed, so its **cost is accounted before the parse** and recorded with a `discarded`
+note); N consecutive live failures → **EXC-API-LIVE** auto-disable with a notice (a
+discarded-but-reachable batch resets the counter — only real HTTP failures count).
 
 ---
 
@@ -142,7 +154,7 @@ live failures → **EXC-API-LIVE** auto-disable with a notice.
 ### PR4 — Closeout: tests, save-action persistence, docs
 
 - [ ] Unit tests: cost computation incl. cache tokens; findings parse against fixtures (valid + malformed → discarded); batcher fire-condition logic; SSE delta parsing; retry/backoff with a mock HTTP layer; key precedence (Keychain vs env).
-- [ ] **Save-action**: since End→dashboard with no M4 review yet, persist `[+ Save action]` commitments (flag them in `ai_live.json`) so they survive to be merged in M4 — don't let them vanish.
+- [ ] **Save-action**: since End→dashboard with no M4 review yet, persist `[+ Save action]` commitments (appended to `saved_actions.json`) so they survive to be merged in M4 — don't let them vanish.
 - [ ] Docs: tick M3 in [milestones.md](milestones.md) + [README.md](README.md); reconcile technical-design §6 (json_schema, streaming, caching, key precedence) and §2 (D15 threading deviation); add an M3 section to [manual-testing.md](manual-testing.md); update `MEMORY.md`.
 - [ ] `cargo clippy` clean; all tests green.
 
@@ -161,8 +173,9 @@ EXC-KEY / EXC-API-LIVE / EXC-BUDGET.
 
 ## Storage additions
 
-- `ai_live.json` — append `[{id,t_ms,type,payload,model,tokens_in,tokens_out,cache_read,cost,latency_ms,saved?}]` (atomic-append, same pattern as `transcript.jsonl`).
-- `chat.json` — `[{t,question,answer,tokens_in,tokens_out,cost}]`.
+- `ai_live.json` — one record per batch: `[{t_ms,model,tokens_in,tokens_out,cache_read,cost,latency_ms,findings[],discarded?}]` (crash-safe append, same pattern as `transcript.jsonl`; a discarded batch still records its cost + a `discarded` reason).
+- `chat.json` — one record per Ask-AI turn: `[{question,answer,tokens_in,tokens_out,cost}]`.
+- `saved_actions.json` — `[+ Save action]` commitments, appended one per line (M4 merges these into post-analysis).
 - API key → **Keychain** (service `com.callassistant.audio` / account `anthropic-api-key`); never in `settings.json` or logs.
 
 ## Frontend store changes
@@ -171,6 +184,54 @@ EXC-KEY / EXC-API-LIVE / EXC-BUDGET.
 `ai-chat-*`), and `toggles` stores; `app-error` already routes to the banner.
 
 ---
+
+## Post-closeout hardening
+
+A correctness + test-coverage pass over the merged M3 layer (`ai/`), plus broader M1/M2
+unit coverage. Nothing the milestone acceptance depends on changed — these harden the
+edges. Suite: **42 → 78 tests**, clippy clean.
+
+**Live-AI (`ai/mod.rs`, `ai/live.rs`):**
+- **Teardown can't hang.** The Haiku client uses a short (20 s) timeout, and the
+  retry/backoff loop (`messages_cancellable`) short-circuits on the batcher's stop flag,
+  so `end()` no longer blocks behind a stack of in-flight retries (worst case was minutes
+  during a 429 storm; now ≤ one in-flight call). A teardown-cancelled batch is **not**
+  counted as a failure and emits no EXC-API-LIVE toast.
+- **Cost is accounted before the parse.** A discarded batch (refusal / malformed body) is
+  still billed, so its cost now hits the meter and the crash-safe `ai_live.json` record
+  (with a `discarded` note) instead of being lost.
+- **`set_toggles` race tightened** — toggles are re-read immediately before firing, so
+  flipping everything off can't trigger one last stale batch (the "all-off ⇒ zero calls"
+  guarantee holds to within microseconds).
+- A `Discard` (reachable API, unparseable body) resets the consecutive-failure counter.
+
+**Chat (`ai/mod.rs` `parse_sse`, `ai/chat.rs`):**
+- A mid-stream `error` frame (e.g. `overloaded_error`) surfaces as an error instead of
+  silently returning the partial answer as complete.
+- `stop_reason` is inspected (refusal / `max_tokens` / dropped stream) — see the chat SSE
+  table above.
+
+**Session (`session/manager.rs`):** `end()` reads the AI-shared cost lock poison-safe, so
+an AI-thread panic can never block the session being saved.
+
+**Decision (D16): Ask-AI is not budget-gated.** `EXC-BUDGET` throttles **automatic** live
+(Haiku) spend only; an explicit user Ask-AI question always runs, its cost still folded
+into the session total. (Confirmed during this pass — an explicit user action shouldn't be
+silently blocked mid-call.)
+
+**Frontend:** the cost meter clamps with `Math.max` so a `cost-update` that races behind a
+larger total (live batch vs Ask-AI on two threads) can't tick the meter backwards.
+
+**Tests added (28):** retry/backoff state machine + status classification, batcher
+fire-condition + `any_on`, SSE error/`stop_reason` handling, chat answer finalization;
+plus M1/M2 — VAD hard-max continuation timestamps + `finish()`-at-EOS + min-length gate,
+WAV `to_i16` clamping + unfinalized-tail repair, device-id round-trip, `list_sessions`
+sort/skip, atomic-write cleanup, Settings/Toggles/StreamTag/SessionStatus serde contracts,
+`whisper_threads` cap.
+
+> **Known M1/M2 limitations surfaced (not yet fixed):** the model downloader retries
+> permanent 4xx (e.g. a 404 model) up to its cap before failing; `start_inner` doesn't
+> guard against `mic == remote` device. Both are minor and tracked for a follow-up.
 
 ## Sequencing notes / risks
 

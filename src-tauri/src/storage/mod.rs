@@ -178,10 +178,13 @@ pub fn create_session(draft: SessionDraft) -> AppResult<SessionMeta> {
 /// the whole list — the dashboard must never crash on one bad row (EXC-CORRUPT
 /// handling proper comes in M5; here we degrade by omission).
 pub fn list_sessions() -> AppResult<Vec<SessionMeta>> {
-    let dir = sessions_dir()?;
+    list_sessions_in(&sessions_dir()?)
+}
+
+fn list_sessions_in(dir: &Path) -> AppResult<Vec<SessionMeta>> {
     let mut out = Vec::new();
 
-    for entry in fs::read_dir(&dir)? {
+    for entry in fs::read_dir(dir)? {
         let entry = entry?;
         if !entry.file_type()?.is_dir() {
             continue;
@@ -468,6 +471,57 @@ mod tests {
         let after: SessionMeta = read_json(&sdir.join("metadata.json")).unwrap();
         assert_eq!(after.status, SessionStatus::Completed);
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn list_sessions_sorts_newest_first_and_skips_unreadable() {
+        let base = std::env::temp_dir().join(format!("ca_list_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        for (id, date) in [
+            ("a", "2026-01-05T00:00:00Z"),
+            ("b", "2026-03-09T00:00:00Z"),
+            ("c", "2026-02-01T00:00:00Z"),
+        ] {
+            let sd = base.join(id);
+            fs::create_dir_all(&sd).unwrap();
+            let mut m = session_meta(id, SessionStatus::Completed);
+            m.date = date.into();
+            write_json(&sd.join("metadata.json"), &m).unwrap();
+        }
+        // A corrupt row is omitted, not fatal (EXC-CORRUPT degrades by omission).
+        let bad = base.join("bad");
+        fs::create_dir_all(&bad).unwrap();
+        fs::write(bad.join("metadata.json"), b"{ corrupt").unwrap();
+        // A dir without metadata.json is ignored.
+        fs::create_dir_all(base.join("nometa")).unwrap();
+
+        let ids: Vec<String> = list_sessions_in(&base)
+            .unwrap()
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(ids, vec!["b", "c", "a"], "newest-first by ISO date");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn atomic_write_round_trips_and_leaves_no_temp() {
+        let dir = std::env::temp_dir().join(format!("ca_atomic_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("metadata.json");
+        write_json(&target, &session_meta("x", SessionStatus::Draft)).unwrap();
+        let back: SessionMeta = read_json(&target).unwrap();
+        assert_eq!(back.id, "x");
+        // A successful atomic write leaves no `.<name>.<uuid>.tmp` behind.
+        let leftover: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp"))
+            .map(|e| e.file_name())
+            .collect();
+        assert!(leftover.is_empty(), "atomic_write left temp files: {leftover:?}");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

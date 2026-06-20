@@ -131,9 +131,9 @@ One Claude client (`reqwest`, JSON). Model IDs come from settings; **Haiku** for
     "commitments":[{"who":"","what":"","by_when":""}],
     "suggestions":[""], "unanswered_questions":[""] }
   ```
-- Parse stays defensive (a refusal / `max_tokens` cut → discard that batch, log, continue — *not* an EXC-API-LIVE failure). Backoff on 429/5xx; after **3** consecutive HTTP failures, auto-disable live AI with a notice (EXC-API-LIVE).
+- Parse stays defensive (a refusal / `max_tokens` cut → discard that batch — its cost is still accounted, since the call was billed — log, continue; *not* an EXC-API-LIVE failure). Backoff on 429/5xx (retries abort on session teardown so End never stalls); after **3** consecutive HTTP failures, auto-disable live AI with a notice (EXC-API-LIVE).
 
-**Chat (Sonnet) — `ai/chat.rs`:** `ask_ai(question)` → full transcript + context + question → free-form answer, **SSE-streamed** (`ClaudeClient::stream_text` → `ai-chat-token` per delta, `ai-chat-done` at the end).
+**Chat (Sonnet) — `ai/chat.rs`:** `ask_ai(question)` → full transcript + context + question → free-form answer, **SSE-streamed** (`ClaudeClient::stream_text` → `ai-chat-token` per delta, `ai-chat-done` at the end). A refusal, a `max_tokens` cut, or a mid-stream `error` frame is surfaced (a clear message / truncation note / error) rather than shown as a blank or silently clipped answer.
 
 > **Threading (D15):** the AI client is `reqwest::blocking` driven from **dedicated std threads**, not tokio — matching the rest of the backend (capture / STT / model_mgr). The batcher is its own thread (teed off the transcript-entry channel); `ask_ai` / `test_api_key` run via `spawn_blocking`. Streaming needs no async runtime — the blocking `Response` is a `Read`. (The §2 sketch below predates this and still shows the original "tokio task" shape.)
 
@@ -223,8 +223,9 @@ sessions/{uuid}/
   metadata.json                     # status, name, labels[], date, duration, participants, context_notes, budget_cap, total_api_cost
   audio.wav                         # stereo 16-bit: L=you, R=remote
   transcript.jsonl                   # appended: [{id,t_ms,stream,text,confidence}]
-  ai_live.json                      # appended: [{id,t_ms,type,payload,model,tokens_in,tokens_out,cost,latency_ms}]
-  chat.json                         # [{t,question,answer,cost}]
+  ai_live.json                      # appended per batch: [{t_ms,model,tokens_in,tokens_out,cache_read,cost,latency_ms,findings[],discarded?}]
+  chat.json                         # appended per turn: [{question,answer,tokens_in,tokens_out,cost}]
+  saved_actions.json                # appended: [+ Save action] commitments (M4 merges into analysis)
   analysis.json                     # {summary,actions[],decisions[],key_topics[],generated_at}
 ```
 

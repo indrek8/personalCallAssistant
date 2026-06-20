@@ -252,4 +252,49 @@ mod tests {
         let _ = fs::remove_file(&small);
         let _ = fs::remove_file(&not_riff);
     }
+
+    #[test]
+    fn to_i16_clamps_without_wrapping() {
+        assert_eq!(to_i16(0.0), 0);
+        assert_eq!(to_i16(1.0), i16::MAX);
+        assert_eq!(to_i16(-1.0), -i16::MAX); // −32767, symmetric — not i16::MIN
+        // Inter-sample overshoot from the resampler must clamp, never wrap.
+        assert_eq!(to_i16(2.0), i16::MAX);
+        assert_eq!(to_i16(-2.0), -i16::MAX);
+        assert_eq!(to_i16(f32::INFINITY), i16::MAX);
+        assert_eq!(to_i16(f32::NEG_INFINITY), -i16::MAX);
+    }
+
+    #[test]
+    fn repairs_unfinalized_file_with_post_flush_tail() {
+        // The real EXC-CRASH shape: hound flushed N frames (header knows them), then
+        // more frames were captured before the kill and never folded into the header.
+        let path = tmp_path("repair_tail");
+        let flushed = 50u64;
+        {
+            let mut w = StereoWavWriter::create(&path).unwrap();
+            for i in 0..flushed {
+                let v = i as f32 / 100.0;
+                w.write_frame(v, -v).unwrap();
+            }
+            w.flush().unwrap(); // header now reports exactly `flushed` frames
+        } // dropped without finalize()
+
+        // Frames captured after the last flush: raw PCM appended past the header's
+        // known length — exactly what a crash between flushes leaves on disk.
+        let tail = 30u64;
+        {
+            let mut f = OpenOptions::new().append(true).open(&path).unwrap();
+            for _ in 0..tail {
+                f.write_all(&0i16.to_le_bytes()).unwrap(); // L
+                f.write_all(&0i16.to_le_bytes()).unwrap(); // R
+            }
+        }
+
+        // repair recomputes the data size from the real file length → every frame.
+        assert_eq!(repair_header(&path).unwrap(), flushed + tail);
+        let mut reader = hound::WavReader::open(&path).unwrap();
+        assert_eq!(reader.samples::<i16>().count() as u64, (flushed + tail) * 2);
+        let _ = fs::remove_file(&path);
+    }
 }

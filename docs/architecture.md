@@ -168,9 +168,10 @@ Transcript chunks are sent to Claude based on the active toggles. All calls are 
         ├── metadata.json         # name, labels[], status, date, duration, participants, context_notes
         ├── audio.wav             # stereo 16-bit: L=you, R=remote
         ├── transcript.jsonl       # [{ t, stream: you|remote, text, confidence }]
-        ├── ai_live.json          # live AI call logs (requests, responses, cost)
-        ├── analysis.json         # post-session output (summary, actions, decisions)
-        └── chat.json             # user Q&A log
+        ├── ai_live.json          # live AI call logs (per-batch findings + cost)
+        ├── chat.json             # Ask-AI Q&A log
+        ├── saved_actions.json    # [+ Save action] commitments (M3; merged in M4)
+        └── analysis.json         # post-session output (summary, actions, decisions)
 ```
 Sessions are flat; labels are global and referenced by ID. **v1** adds SQLite for cross-session queries (global actions view, full-text search) while keeping audio/transcripts on disk.
 

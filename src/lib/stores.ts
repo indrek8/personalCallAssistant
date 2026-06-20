@@ -127,7 +127,10 @@ export async function setupEventListeners(): Promise<void> {
   });
   await listen<CostUpdateEvent>("cost-update", (e) => {
     if (get(liveSessionId) === e.payload.session_id) {
-      live.update((l) => ({ ...l, cost: e.payload.total }));
+      // Session cost is monotonic; clamp so a cost-update that raced behind a
+      // larger total (live batch vs Ask-AI emitting from two threads) can't tick
+      // the meter backwards.
+      live.update((l) => ({ ...l, cost: Math.max(l.cost, e.payload.total) }));
     }
   });
   // Ask-AI streams to the most-recent (streaming) chat turn — one Q&A at a time.
