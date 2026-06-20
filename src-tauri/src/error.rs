@@ -11,7 +11,7 @@ use thiserror::Error;
 ///
 /// Each variant serializes to a tagged JSON object of the form
 /// `{ "code": "EXC-…", "message": "…" }` so the frontend can branch on `code`.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum AppError {
     /// A command exists but is intentionally not wired up yet in M1.
     #[error("not implemented in M1: {0}")]
