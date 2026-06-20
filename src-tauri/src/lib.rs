@@ -4,9 +4,9 @@
 //! device enumeration; STT/AI are stubs.
 
 mod ai;
-mod audio;
+pub mod audio;
 mod commands;
-mod error;
+pub mod error;
 mod events;
 mod session;
 mod stt;
