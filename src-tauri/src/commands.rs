@@ -361,6 +361,16 @@ pub async fn ask_ai(
     Ok(json!({ "answer": answer, "cost": cost }))
 }
 
+/// `save_action({ finding })` → `()`. Persist a `[+ Save action]` commitment to
+/// the live session's `saved_actions.json` so it survives End (M4 merges these
+/// into post-analysis).
+#[tauri::command]
+pub fn save_action(state: State<'_, AppState>, finding: serde_json::Value) -> AppResult<()> {
+    let (session_id, _) = manager::live_handle(&state)
+        .ok_or_else(|| AppError::Audio("no live session to save an action".into()))?;
+    storage::append_json_line(&storage::saved_actions_path(&session_id)?, &finding)
+}
+
 /// `run_post_analysis({ session_id })` → `()` (M4).
 #[tauri::command]
 pub fn run_post_analysis(_session_id: String) -> AppResult<()> {

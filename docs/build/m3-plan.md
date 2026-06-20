@@ -9,10 +9,10 @@
 
 ## Status
 
-M2 complete & merged. `ai/mod.rs` is still the M1 placeholder (`ClaudeClient` struct,
-no logic). The Live screen's AI panel is inert ("arrives in M3"); `ask_ai` /
-`set_toggles` are registered stubs returning `NotImplemented`. This plan builds the
-whole layer in **4 PRs**, mirroring M2's cadence.
+✅ **Complete & merged.** PR1 (#9) Claude client + Keychain keys · PR2 (#10) live Haiku
+findings + toggles + cost + budget · PR3 (#11) streamed Sonnet Ask-AI · PR4 (#12) closeout
+— save-action persistence, SSE-parse test, doc reconciliation. **42 unit tests**, clippy
+clean. The on-device live-AI run (a real call with your key) is the remaining manual check.
 
 ---
 

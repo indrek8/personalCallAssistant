@@ -80,14 +80,16 @@ M0 Spikes ─► M1 Skeleton ─► M2 Capture→Transcript ─► M3 Live AI �
 
 **Goal:** real-time fact-checks, commitments, suggestions, unanswered-Qs, plus Ask-AI — all cost-tracked.
 
-- [ ] `ai/mod.rs`: Claude `reqwest` client, cost accounting, retries/backoff.
-- [ ] `ai/live.rs`: `AiBatcher` (≥5 entries OR ≥30 s) → Haiku → strict-JSON findings; defensive parse.
-- [ ] Toggle system (F/C/S/Q) → live system prompt; `set_toggles`.
-- [ ] `ai/chat.rs`: `ask_ai` → Sonnet (optionally streamed).
-- [ ] Events `ai-finding`, `cost-update`, `ai-chat-*`; append `ai_live.json` / `chat.json`.
-- [ ] AI panel: findings feed, `[+ Save action]` on commitments, Ask-AI bar, cost meter.
-- [ ] Budget cap → `EXC-BUDGET` pauses live AI; transcript continues.
-- [ ] Failure handling: `EXC-API-LIVE` chip + auto-disable after N failures.
+> **Status:** ✅ **Complete & merged** (PRs #9–#12) — Claude client + macOS-Keychain key mgmt (PR1), live Haiku findings + F/C/S/Q toggles + cost meter + EXC-BUDGET/EXC-API-LIVE (PR2), streamed Sonnet Ask-AI (PR3), and closeout — save-action persistence, SSE-parse test, doc reconciliation (PR4). **42 unit tests**, clippy clean. The on-device live-AI run (a real call with your key) is the remaining manual check. Plan: [m3-plan.md](m3-plan.md).
+
+- [x] `ai/mod.rs`: Claude `reqwest::blocking` client, cost accounting (incl. cache multipliers), retries/backoff, SSE streaming.
+- [x] `ai/live.rs`: `AiBatcher` (≥5 entries OR ≥30 s) → Haiku → **structured-output (json_schema)** findings (D12); defensive parse fallback.
+- [x] Toggle system (F/C/S/Q) → active features in the *user* turn (cache-stable); `set_toggles`.
+- [x] `ai/chat.rs`: `ask_ai` → Sonnet, **SSE-streamed** (`ai-chat-token` / `ai-chat-done`).
+- [x] Events `ai-finding`, `cost-update`, `ai-chat-*`; append `ai_live.json` / `chat.json`.
+- [x] AI panel: findings feed, `[+ Save action]` on commitments (persisted to `saved_actions.json`), Ask-AI bar, cost meter.
+- [x] Budget cap → `EXC-BUDGET` pauses live AI; transcript continues.
+- [x] Failure handling: `EXC-API-LIVE` auto-disable after 3 failures; key in Keychain (D11) with **EXC-KEY** in pre-flight.
 
 **Acceptance:**
 - Speaking a commitment/factual-conflict surfaces the right finding in the panel within a batch cycle.

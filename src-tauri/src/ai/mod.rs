@@ -223,7 +223,7 @@ impl ClaudeClient {
     pub fn stream_text(
         &self,
         body: &serde_json::Value,
-        mut on_token: impl FnMut(&str),
+        on_token: impl FnMut(&str),
     ) -> AppResult<(String, Usage)> {
         let resp = self
             .http
@@ -247,49 +247,58 @@ impl ClaudeClient {
             )));
         }
 
-        let reader = BufReader::new(resp);
-        let mut text = String::new();
-        let mut usage = Usage::default();
-        for line in reader.lines() {
-            let line = line.map_err(|e| AppError::Api(format!("stream read: {e}")))?;
-            let Some(data) = line.strip_prefix("data:") else {
-                continue;
-            };
-            let data = data.trim();
-            if data.is_empty() || data == "[DONE]" {
-                continue;
-            }
-            let Ok(ev) = serde_json::from_str::<StreamEvent>(data) else {
-                continue; // ignore frames we don't model (ping, content_block_start, …)
-            };
-            match ev.kind.as_str() {
-                "message_start" => {
-                    if let Some(m) = ev.message {
-                        usage.input_tokens = m.usage.input_tokens;
-                        usage.cache_read_input_tokens = m.usage.cache_read_input_tokens;
-                        usage.cache_creation_input_tokens = m.usage.cache_creation_input_tokens;
-                    }
+        parse_sse(BufReader::new(resp).lines(), on_token)
+    }
+}
+
+/// Parse a stream of SSE lines (`data: {json}`) into accumulated text + usage,
+/// invoking `on_token` for each text delta. Extracted from `stream_text` so the
+/// frame handling is unit-testable without a live connection.
+fn parse_sse(
+    lines: impl Iterator<Item = std::io::Result<String>>,
+    mut on_token: impl FnMut(&str),
+) -> AppResult<(String, Usage)> {
+    let mut text = String::new();
+    let mut usage = Usage::default();
+    for line in lines {
+        let line = line.map_err(|e| AppError::Api(format!("stream read: {e}")))?;
+        let Some(data) = line.strip_prefix("data:") else {
+            continue;
+        };
+        let data = data.trim();
+        if data.is_empty() || data == "[DONE]" {
+            continue;
+        }
+        let Ok(ev) = serde_json::from_str::<StreamEvent>(data) else {
+            continue; // ignore frames we don't model (ping, content_block_start, …)
+        };
+        match ev.kind.as_str() {
+            "message_start" => {
+                if let Some(m) = ev.message {
+                    usage.input_tokens = m.usage.input_tokens;
+                    usage.cache_read_input_tokens = m.usage.cache_read_input_tokens;
+                    usage.cache_creation_input_tokens = m.usage.cache_creation_input_tokens;
                 }
-                "content_block_delta" => {
-                    if let Some(d) = ev.delta {
-                        if d.kind.as_deref() == Some("text_delta") {
-                            if let Some(t) = d.text {
-                                on_token(&t);
-                                text.push_str(&t);
-                            }
+            }
+            "content_block_delta" => {
+                if let Some(d) = ev.delta {
+                    if d.kind.as_deref() == Some("text_delta") {
+                        if let Some(t) = d.text {
+                            on_token(&t);
+                            text.push_str(&t);
                         }
                     }
                 }
-                "message_delta" => {
-                    if let Some(u) = ev.usage {
-                        usage.output_tokens = u.output_tokens;
-                    }
-                }
-                _ => {}
             }
+            "message_delta" => {
+                if let Some(u) = ev.usage {
+                    usage.output_tokens = u.output_tokens;
+                }
+            }
+            _ => {}
         }
-        Ok((text, usage))
     }
+    Ok((text, usage))
 }
 
 /// SSE frames we care about from a streamed Messages response (PR3). Unmodeled
@@ -397,5 +406,29 @@ mod tests {
         assert_eq!(truncate("abcdef", 3), "abc…");
         // Multi-byte char at the boundary must not panic.
         let _ = truncate("aé😀bc", 2);
+    }
+
+    #[test]
+    fn parse_sse_extracts_text_and_usage() {
+        let frames: Vec<&str> = vec![
+            r#"data: {"type":"message_start","message":{"usage":{"input_tokens":10,"cache_read_input_tokens":3}}}"#,
+            r#"data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hel"}}"#,
+            "event: ping",
+            r#"data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"lo"}}"#,
+            r#"data: {"type":"message_delta","usage":{"output_tokens":5}}"#,
+            "data: [DONE]",
+            "",
+        ];
+        let mut toks: Vec<String> = Vec::new();
+        let (text, usage) = parse_sse(
+            frames.into_iter().map(|s| Ok::<String, std::io::Error>(s.to_string())),
+            |t| toks.push(t.to_string()),
+        )
+        .unwrap();
+        assert_eq!(text, "Hello");
+        assert_eq!(toks, vec!["Hel".to_string(), "lo".to_string()]);
+        assert_eq!(usage.input_tokens, 10);
+        assert_eq!(usage.cache_read_input_tokens, 3);
+        assert_eq!(usage.output_tokens, 5);
     }
 }

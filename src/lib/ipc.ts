@@ -15,6 +15,7 @@ import type {
   TestKeyResult,
   ApiKeyStatus,
   Toggles,
+  Finding,
 } from "./types";
 
 /** Re-exported so stores can subscribe to backend events in one place. */
@@ -119,4 +120,9 @@ export function setToggles(t: Toggles): Promise<void> {
 /** ask_ai({ question }) -> { answer, cost }. Streams ai-chat-token/done during. */
 export function askAi(question: string): Promise<{ answer: string; cost: number }> {
   return invoke<{ answer: string; cost: number }>("ask_ai", { question });
+}
+
+/** save_action({ finding }) -> (). Persists a saved commitment to the session. */
+export function saveAction(finding: Finding): Promise<void> {
+  return invoke<void>("save_action", { finding });
 }

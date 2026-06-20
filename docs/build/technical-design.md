@@ -125,15 +125,17 @@ One Claude client (`reqwest`, JSON). Model IDs come from settings; **Haiku** for
 **Live (Haiku) — `ai/live.rs`:**
 - Trigger: `≥5 new entries OR ≥30 s`, and not already in flight, and ≥1 toggle on.
 - Input: recent window + rolling ~3 min context + session `context_notes` + active toggles.
-- System prompt enables only active features. Output is **strict JSON**:
+- The frozen system prompt describes **all four** features and sits behind a `cache_control` breakpoint (cached prefix); the **active toggles ride in the user turn**, so flipping F/C/S/Q never invalidates the cache (D12). Output is constrained by **structured outputs** (`output_config.format` json_schema), so the response is schema-valid:
   ```json
   { "fact_checks":[{"claim":"","assessment":"","severity":"warning|info"}],
     "commitments":[{"who":"","what":"","by_when":""}],
     "suggestions":[""], "unanswered_questions":[""] }
   ```
-- Parse defensively (EXC-API-LIVE on malformed → discard that batch, log, continue). Backoff on 429/5xx; after N consecutive failures, auto-disable live AI with a notice.
+- Parse stays defensive (a refusal / `max_tokens` cut → discard that batch, log, continue — *not* an EXC-API-LIVE failure). Backoff on 429/5xx; after **3** consecutive HTTP failures, auto-disable live AI with a notice (EXC-API-LIVE).
 
-**Chat (Sonnet) — `ai/chat.rs`:** `ask_ai(question)` → full transcript + context + question → free-form answer (optionally streamed via `ai-chat-token` events).
+**Chat (Sonnet) — `ai/chat.rs`:** `ask_ai(question)` → full transcript + context + question → free-form answer, **SSE-streamed** (`ClaudeClient::stream_text` → `ai-chat-token` per delta, `ai-chat-done` at the end).
+
+> **Threading (D15):** the AI client is `reqwest::blocking` driven from **dedicated std threads**, not tokio — matching the rest of the backend (capture / STT / model_mgr). The batcher is its own thread (teed off the transcript-entry channel); `ask_ai` / `test_api_key` run via `spawn_blocking`. Streaming needs no async runtime — the blocking `Response` is a `Read`. (The §2 sketch below predates this and still shows the original "tokio task" shape.)
 
 **Post-analysis (Sonnet) — `ai/analyze.rs`:** full transcript + context + live annotations → strict JSON:
 ```json
