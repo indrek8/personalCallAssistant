@@ -15,17 +15,17 @@ M0 Spikes ─► M1 Skeleton ─► M2 Capture→Transcript ─► M3 Live AI �
 
 **Goal:** answer the two open technical questions before committing to architecture. Code here is disposable.
 
-> **Status:** ✅ **s1 + s2 validated** — Whisper `small` RTF 0.040 / `medium` 0.055; concurrent ×2 RTF 0.032 → **2-stream model locked**. ⬜ s3 (dual capture) + s4 (Claude) remain manual hardware/credential runs.
+> **Status:** ✅ **M0 complete — all four spikes validated.** Whisper `small` RTF 0.040 / `medium` 0.055; concurrent ×2 RTF 0.032 → **2-stream model locked**; s3 dual-capture on hardware → clean L/R attribution (idle channel held -120 dBFS = zero cross-bleed); s4 Claude Haiku + Sonnet calls returned, parsed, and cost-accounted (token/cost fields confirmed).
 
 - [x] **S1 · Whisper speed.** Standalone Rust bin: load `small` (and `base`) via `whisper-rs`, transcribe a pre-recorded 10 s 16 kHz WAV, print text + wall-time. Run on the target Mac.
 - [x] **S2 · Whisper ×2 feasibility.** Run two transcriptions concurrently (simulating you+remote). Measure CPU + latency. Decides **2-stream vs single-stream** attribution.
-- [ ] **S3 · Dual-audio capture.** Standalone Rust bin: open the **mic** and a **BlackHole** input via `cpal` simultaneously; write a 10 s stereo WAV (L=mic, R=blackhole). Manually set up the Multi-Output Device and confirm remote audio (e.g. a YouTube tab) lands on R while your voice lands on L.
-- [ ] **S4 · Claude calls.** Minimal `reqwest` call to Haiku + Sonnet with the live + post JSON schemas; confirm parsing and capture token/cost fields.
+- [x] **S3 · Dual-audio capture.** Standalone Rust bin: open the **mic** and a **BlackHole** input via `cpal` simultaneously; write a 10 s stereo WAV (L=mic, R=blackhole). Manually set up the Multi-Output Device and confirm remote audio (e.g. a YouTube tab) lands on R while your voice lands on L. **Result (M0/S3): validated on hardware** — Shokz mic + BlackHole, 16 s capture; voice isolated to L while the idle R channel held -120 dBFS, then YouTube isolated to R while idle L held -120 dBFS → free 2-way attribution, zero cross-bleed.
+- [x] **S4 · Claude calls.** Minimal `reqwest` call to Haiku + Sonnet with the live + post JSON schemas; confirm parsing and capture token/cost fields. **Result (M0/S4): validated** — `claude-haiku-4-5` + `claude-sonnet-4-6` both returned "spike ok", response JSON parsed, token/cost accounting correct (Haiku $0.000038, Sonnet $0.000114 per ping). Confirms the M3 `ai/mod.rs` HTTP shape.
 
 **Acceptance / decision gate:**
 - Real-time factor for `small` is comfortably < 1.0 (transcribes faster than realtime) → use `small`; else fall back to `base`. **Result (M0/S1): `small` RTF 0.040, `medium` RTF 0.055 — both ~20× realtime, so the MVP defaults to `medium` for accuracy.**
 - ×2 concurrent is sustainable → **lock 2-stream You/Remote**; else fall back to mixed mono + generic "Speaker" (update [technical-design.md](technical-design.md) §4–5).
-- Dual capture works → the audio model in §4 is real.
+- Dual capture works → the audio model in §4 is real. **Result (M0/S3): confirmed** — clean L/R separation, zero cross-bleed; the §4 audio model holds.
 
 > If S1/S3 fail badly, that's a *cheap* pivot point — far better to learn here than in M2.
 

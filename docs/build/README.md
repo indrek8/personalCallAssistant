@@ -27,12 +27,12 @@ Key technical decisions made in these docs (revisit consciously, not by accident
 
 | # | Decision | Rationale | Status |
 |---|---|---|---|
-| D1 | **2-stream You/Remote audio** — Multi-Output Device for remote + direct mic | Free speaker attribution without diarization | **Validated — M0 S1+S2 passed:** whisper `small` RTF ~0.04 single / ~0.03 concurrent ×2 (~25× realtime headroom). S3 hardware capture run still pending. |
+| D1 | **2-stream You/Remote audio** — Multi-Output Device for remote + direct mic | Free speaker attribution without diarization | **Validated — M0 S1+S2+S3 passed:** whisper `small` RTF ~0.04 single / ~0.03 concurrent ×2 (~25× realtime headroom); S3 dual-capture on hardware → clean L/R attribution (idle channel held -120 dBFS = zero cross-bleed). |
 | D2 | **No virtual mic in MVP** — passive listening only | Meeting app keeps using the real mic; virtual-mic proxy is a v1/HAL concern | Locked |
 | D3 | Incremental, atomic writes (temp→fsync→rename) | Crash safety; recovery | Locked |
 | D4 | VAD segmentation with a hard-max length | Avoids mid-word slicing and unbounded waits | Locked |
 | D5 | Whisper **`medium`** default (fallback `small`/`base`), downloaded on demand | Best accuracy at negligible cost — medium is real-time too | **Validated (M0/S1):** medium RTF 0.055, small 0.040 — both ~20× realtime |
-| D6 | Haiku (live) / Sonnet (chat + post-analysis) | Cost vs quality split | Locked |
+| D6 | Haiku (live) / Sonnet (chat + post-analysis) | Cost vs quality split | **Locked — M0/S4 validated:** `claude-haiku-4-5` + `claude-sonnet-4-6` resolve, responses parse, token/cost accounting confirmed. |
 | D7 | Event-driven frontend, single `mode` store as router | Matches the state machine; no URL routing needed | Locked |
 | D8 | Flat-file storage with normalized IDs | Simple MVP, forward-compatible | Locked |
 
@@ -47,4 +47,4 @@ M4  Post-analysis       Sonnet extraction → review/edit → save
 M5  Manage & polish     dashboard, labels, settings, onboarding, error handling
 ```
 
-**Progress:** M1 ✅ complete & merged (PR #1); M0 spikes **s1/s2 ✅ validated** (s3/s4 are manual hardware/credential runs). **Next → [M2: Capture → Live Transcript](milestones.md#m2--capture--live-transcript-the-engine).**
+**Progress:** M1 ✅ complete & merged (PR #1); **M0 ✅ complete** — all four spikes validated (s1/s2 Whisper, s3 dual-capture, s4 Claude Haiku/Sonnet + cost). **Next → [M2: Capture → Live Transcript](milestones.md#m2--capture--live-transcript-the-engine).**
