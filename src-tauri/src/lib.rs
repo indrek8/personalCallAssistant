@@ -56,6 +56,8 @@ pub fn run() {
             commands::test_api_key,
             commands::save_api_key,
             commands::get_api_key_status,
+            // --- M3 live AI — findings batcher toggles (PR2) ---
+            commands::set_toggles,
             // --- M3/M4/M5 stubs (named per §7) ---
             commands::ask_ai,
             commands::run_post_analysis,

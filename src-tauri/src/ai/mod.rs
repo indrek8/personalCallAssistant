@@ -10,6 +10,9 @@
 
 #![allow(dead_code)] // Built out across M3 PRs; some helpers land before their callers.
 
+pub mod live;
+pub mod prompts;
+
 use serde::Deserialize;
 use std::time::Duration;
 

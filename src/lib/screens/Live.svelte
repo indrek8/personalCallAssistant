@@ -10,13 +10,14 @@
     devices,
     banner,
     refreshSessions,
+    findings,
+    toggles,
   } from "$lib/stores";
-  import { isTauri, pauseCapture, resumeCapture, endSession } from "$lib/ipc";
-  import type { StreamTag } from "$lib/types";
+  import { isTauri, pauseCapture, resumeCapture, endSession, setToggles } from "$lib/ipc";
+  import type { StreamTag, Toggles, Finding } from "$lib/types";
 
-  // M2: the transcript + timer are real (fed by `transcript-entry` /
-  // `capture-state` events). The AI panel is intentionally inert — live analysis
-  // lands in M3.
+  // M3: transcript + timer (M2) plus the live AI panel — findings feed, F/C/S/Q
+  // toggles, and the cost meter, fed by `ai-finding` / `cost-update` events.
 
   let ending = $state(false);
   let trArea: HTMLDivElement;
@@ -69,6 +70,46 @@
   }
   const whoLabel = (s: StreamTag) => (s === "you" ? "You" : "Remote");
   const whoClass = (s: StreamTag) => (s === "you" ? "who-you" : "who-remote");
+
+  // ---- Live AI (M3) ---------------------------------------------------------
+  type FK = "f" | "c" | "s" | "q";
+  const FEATURES: { k: FK; n: string }[] = [
+    { k: "f", n: "Fact-check" },
+    { k: "c", n: "Commitments" },
+    { k: "s", n: "Suggestions" },
+    { k: "q", n: "Questions" },
+  ];
+  const anyToggleOn = $derived($toggles.f || $toggles.c || $toggles.s || $toggles.q);
+
+  async function toggle(k: FK) {
+    const next: Toggles = { ...$toggles, [k]: !$toggles[k] };
+    toggles.set(next);
+    if (!isTauri()) return;
+    try {
+      await setToggles(next);
+    } catch (e) {
+      banner.set(`Could not update toggles: ${String(e)}`);
+    }
+  }
+
+  function fmtCost(c: number): string {
+    if (c <= 0) return "$0.00";
+    if (c < 0.01) return "$" + c.toFixed(4);
+    return "$" + c.toFixed(2);
+  }
+  const costStr = $derived(fmtCost($live.cost));
+
+  const kindLabel = (k: string) =>
+    k === "fact" ? "Fact-check"
+    : k === "commitment" ? "Commitment"
+    : k === "suggestion" ? "Suggestion"
+    : "Unanswered";
+
+  // Save action — in-memory for now (M4 persists + merges into post-analysis).
+  let savedIds = $state<string[]>([]);
+  function saveAction(f: Finding) {
+    if (!savedIds.includes(f.id)) savedIds = [...savedIds, f.id];
+  }
 
   async function togglePause() {
     try {
@@ -147,13 +188,40 @@
     <div class="ai">
       <div class="ai-head">
         <span class="lab">Live Intelligence</span>
-        <span class="soon">arrives in M3</span>
+        <div class="tg-row">
+          {#each FEATURES as f}
+            <button class="tg" class:on={$toggles[f.k]} title={f.n} aria-label={f.n} onclick={() => toggle(f.k)}>{f.k.toUpperCase()}</button>
+          {/each}
+        </div>
+        <span class="cost" title="Estimated API cost this session">{costStr}</span>
       </div>
       <div class="findings scroll">
-        <div class="placeholder">
-          Real-time fact-checks, commitments, suggestions, and Q&amp;A will appear here once the
-          live AI pipeline (M3) is wired in. For now the transcript above is fully live.
-        </div>
+        {#each $findings as f (f.id)}
+          <div class="finding fk-{f.kind}">
+            <div class="f-head">
+              <span class="f-kind">{kindLabel(f.kind)}</span>
+              <span class="f-ts">{fmtTs(f.t_ms)}</span>
+            </div>
+            <div class="f-title">{f.title}</div>
+            {#if f.detail}<div class="f-detail">{f.detail}</div>{/if}
+            {#if f.kind === "commitment"}
+              <div class="f-meta">
+                {#if f.who}<span class="who">{f.who}</span>{/if}
+                {#if f.by_when}<span class="when">· {f.by_when}</span>{/if}
+                <button class="f-save" disabled={savedIds.includes(f.id)} onclick={() => saveAction(f)}>
+                  {savedIds.includes(f.id) ? "✓ Saved" : "+ Save action"}
+                </button>
+              </div>
+            {/if}
+          </div>
+        {/each}
+        {#if $findings.length === 0}
+          <div class="placeholder">
+            {anyToggleOn
+              ? "Listening for fact-checks, commitments, suggestions, and open questions…"
+              : "Live analysis is off. Turn on F / C / S / Q above to start."}
+          </div>
+        {/if}
       </div>
       <div class="ask-bar">
         <div class="ic"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg></div>
@@ -195,12 +263,33 @@
   .eq i:nth-child(5){animation-delay:.6s;height:7px} .eq i:nth-child(6){animation-delay:.75s;height:12px}
   .listening span{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
 
-  .ai{flex:none;height:200px;border-top:1px solid var(--line);background:linear-gradient(180deg,var(--bg-2),var(--bg-1));display:flex;flex-direction:column}
+  .ai{flex:none;height:280px;border-top:1px solid var(--line);background:linear-gradient(180deg,var(--bg-2),var(--bg-1));display:flex;flex-direction:column}
   .ai-head{flex:none;display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line-soft)}
   .ai-head .lab{font-family:var(--f-mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3)}
-  .ai-head .soon{margin-left:auto;font-family:var(--f-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-4);border:1px solid var(--line);border-radius:6px;padding:3px 8px}
+  .ai-head .tg-row{margin-left:auto;display:flex;gap:6px}
+  .ai-head .tg{width:26px;height:22px;border-radius:6px;border:1px solid var(--line);background:var(--bg-2);color:var(--ink-4);font-family:var(--f-mono);font-size:11px;font-weight:600;cursor:pointer;transition:.15s;padding:0}
+  .ai-head .tg:hover{color:var(--ink-2)}
+  .ai-head .tg.on{background:var(--gold-soft);border-color:var(--gold-line);color:var(--gold)}
+  .ai-head .cost{font-family:var(--f-mono);font-size:11px;color:var(--gold);min-width:52px;text-align:right}
   .findings{flex:1;overflow-y:auto;padding:14px 18px}
   .placeholder{font-size:13px;line-height:1.6;color:var(--ink-4);max-width:620px}
+  .finding{border:1px solid var(--line-soft);border-left:2px solid var(--ink-4);background:var(--bg-2);border-radius:9px;padding:11px 13px;margin-bottom:10px;max-width:760px}
+  .finding.fk-fact{border-left-color:var(--fact,#e7b24c)}
+  .finding.fk-commitment{border-left-color:var(--commit,#6ea8fe)}
+  .finding.fk-suggestion{border-left-color:var(--suggest,#8ac479)}
+  .finding.fk-question{border-left-color:var(--unanswered,#b794f6)}
+  .f-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+  .f-kind{font-family:var(--f-mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;color:var(--ink-3)}
+  .fk-fact .f-kind{color:var(--fact,#e7b24c)}
+  .fk-commitment .f-kind{color:var(--commit,#6ea8fe)}
+  .fk-suggestion .f-kind{color:var(--suggest,#8ac479)}
+  .fk-question .f-kind{color:var(--unanswered,#b794f6)}
+  .f-ts{font-family:var(--f-mono);font-size:10px;color:var(--ink-4)}
+  .f-title{font-size:13.5px;line-height:1.5;color:var(--ink)}
+  .f-detail{font-size:12.5px;line-height:1.5;color:var(--ink-3);margin-top:4px}
+  .f-meta{display:flex;align-items:center;gap:7px;margin-top:8px;font-family:var(--f-mono);font-size:11px;color:var(--ink-3)}
+  .f-save{margin-left:auto;font-family:var(--f-mono);font-size:10.5px;color:var(--gold);background:var(--gold-soft);border:1px solid var(--gold-line);border-radius:6px;padding:4px 10px;cursor:pointer;transition:.15s}
+  .f-save:disabled{color:var(--suggest,#8ac479);background:transparent;border-color:var(--line-soft);cursor:default}
   .ask-bar{flex:none;padding:12px 16px;border-top:1px solid var(--line-soft);display:flex;gap:10px;align-items:center;background:var(--bg-1)}
   .ask-bar .ic{width:30px;height:30px;border-radius:8px;background:var(--gold-soft);border:1px solid var(--gold-line);display:flex;align-items:center;justify-content:center;color:var(--gold);flex:none;opacity:.5}
   .ask-bar input{flex:1;background:var(--bg-2);border:1px solid var(--line);border-radius:9px;padding:10px 14px;color:var(--ink);font-family:var(--f-ui);font-size:13px;outline:none;opacity:.5}

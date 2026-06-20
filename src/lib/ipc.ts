@@ -14,6 +14,7 @@ import type {
   Settings,
   TestKeyResult,
   ApiKeyStatus,
+  Toggles,
 } from "./types";
 
 /** Re-exported so stores can subscribe to backend events in one place. */
@@ -108,4 +109,9 @@ export function saveApiKey(key: string): Promise<void> {
 /** get_api_key_status() -> { present }. Never returns the key itself. */
 export function getApiKeyStatus(): Promise<ApiKeyStatus> {
   return invoke<ApiKeyStatus>("get_api_key_status");
+}
+
+/** set_toggles({ f, c, s, q }) -> (). Live-AI features for the next batch. */
+export function setToggles(t: Toggles): Promise<void> {
+  return invoke<void>("set_toggles", { f: t.f, c: t.c, s: t.s, q: t.q });
 }
