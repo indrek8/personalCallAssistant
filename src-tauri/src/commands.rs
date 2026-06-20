@@ -11,9 +11,17 @@
 //!
 //! Command names here MUST match §7 exactly — they are the integration contract.
 
+use serde::Serialize;
+use serde_json::json;
+use std::thread;
+use tauri::{AppHandle, State};
+
 use crate::audio::{self, AudioDevice};
 use crate::error::{AppError, AppResult};
+use crate::events;
+use crate::session::manager::{self, AppState};
 use crate::session::model::{CreatedSession, SessionDraft, SessionFull, SessionMeta};
+use crate::stt::model_mgr::{self, ModelStatus};
 use crate::storage::{self, schema::Settings};
 
 // ----------------------------------------------------------------------------
@@ -67,22 +75,156 @@ fn not_impl(name: &str) -> AppError {
     AppError::NotImplemented(name.to_string())
 }
 
-/// `start_capture({ session_id })` → `()`. Spawns the capture pipeline (M2).
+// ----------------------------------------------------------------------------
+// M2 — live capture pipeline (SessionManager) + pre-flight + models
+// ----------------------------------------------------------------------------
+
+/// `start_capture({ session_id })` → `()`. Resolves devices + model from
+/// settings, wires capture → STT, and starts streaming `transcript-entry`.
 #[tauri::command]
-pub fn start_capture(_session_id: String) -> AppResult<()> {
-    Err(not_impl("start_capture"))
+pub fn start_capture(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+) -> AppResult<()> {
+    manager::start(&app, &state, session_id)
 }
 
-/// `pause_capture` → `()` (M2).
+/// `pause_capture` → `()`.
 #[tauri::command]
-pub fn pause_capture() -> AppResult<()> {
-    Err(not_impl("pause_capture"))
+pub fn pause_capture(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    manager::pause(&app, &state)
 }
 
-/// `end_session` → `()`. Finalize → analyzing (M2/M4).
+/// `resume_capture` → `()`.
 #[tauri::command]
-pub fn end_session() -> AppResult<()> {
-    Err(not_impl("end_session"))
+pub fn resume_capture(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    manager::resume(&app, &state)
+}
+
+/// `end_session` → `()`. Stops capture, finalizes the WAV + transcript. (M2:
+/// terminal `completed`; M4 inserts analyzing → reviewing.)
+#[tauri::command]
+pub fn end_session(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    manager::end(&app, &state)
+}
+
+/// One pre-flight check (flows.md §4).
+#[derive(Serialize)]
+pub struct PreflightCheck {
+    id: String,
+    label: String,
+    /// `ok` | `warn` | `fail`.
+    status: String,
+    message: String,
+    /// A command the UI can offer to fix it (e.g. `download_model`).
+    fixable: Option<String>,
+}
+
+/// `run_preflight` result: `ok` is false if any check failed.
+#[derive(Serialize)]
+pub struct PreflightResult {
+    ok: bool,
+    checks: Vec<PreflightCheck>,
+}
+
+/// `run_preflight({ session_id })` → the §4 checks gating Start. M2 covers the
+/// capture/transcript prerequisites; the API-key check is an M3 concern.
+#[tauri::command]
+pub fn run_preflight(_session_id: String) -> AppResult<PreflightResult> {
+    let settings = storage::get_settings()?;
+    let mut checks = Vec::new();
+
+    match audio::default_input_id() {
+        Ok(_) => checks.push(check("mic", "Microphone", "ok", "Input device available", None)),
+        Err(_) => checks.push(check("mic", "Microphone", "fail", "No input device found", None)),
+    }
+
+    match audio::find_remote_loopback_id() {
+        Ok(Some(_)) => checks.push(check(
+            "remote",
+            "Loopback device",
+            "ok",
+            "BlackHole / Call Assistant detected",
+            None,
+        )),
+        Ok(None) => checks.push(check(
+            "remote",
+            "Loopback device",
+            "fail",
+            "No BlackHole / Call Assistant input — set up the Multi-Output device",
+            None,
+        )),
+        Err(e) => checks.push(check("remote", "Loopback device", "fail", &e.to_string(), None)),
+    }
+
+    match model_mgr::model_status(&settings.whisper_model) {
+        Ok(st) if st.downloaded => checks.push(check(
+            "model",
+            "Transcription model",
+            "ok",
+            &format!("{} ready", settings.whisper_model),
+            None,
+        )),
+        Ok(_) => checks.push(check(
+            "model",
+            "Transcription model",
+            "fail",
+            &format!("Model '{}' not downloaded", settings.whisper_model),
+            Some("download_model"),
+        )),
+        Err(e) => checks.push(check("model", "Transcription model", "fail", &e.to_string(), None)),
+    }
+
+    let ok = checks.iter().all(|c| c.status.as_str() != "fail");
+    Ok(PreflightResult { ok, checks })
+}
+
+fn check(id: &str, label: &str, status: &str, message: &str, fixable: Option<&str>) -> PreflightCheck {
+    PreflightCheck {
+        id: id.into(),
+        label: label.into(),
+        status: status.into(),
+        message: message.into(),
+        fixable: fixable.map(|s| s.into()),
+    }
+}
+
+/// `list_models` → `ModelStatus[]`.
+#[tauri::command]
+pub fn list_models() -> AppResult<Vec<ModelStatus>> {
+    model_mgr::list_models()
+}
+
+/// `download_model({ name })` → `()`. Runs in the background, emitting
+/// `model-download-progress`; a failure surfaces as `app-error`.
+#[tauri::command]
+pub fn download_model(app: AppHandle, name: String) -> AppResult<()> {
+    thread::spawn(move || {
+        let result = model_mgr::download_model(&name, |done, total| {
+            let pct = total
+                .map(|t| if t > 0 { (done * 100 / t) as u32 } else { 0 })
+                .unwrap_or(0);
+            events::emit(
+                &app,
+                events::MODEL_DOWNLOAD_PROGRESS,
+                json!({ "name": name.as_str(), "pct": pct }),
+            );
+        });
+        match result {
+            Ok(()) => events::emit(
+                &app,
+                events::MODEL_DOWNLOAD_PROGRESS,
+                json!({ "name": name.as_str(), "pct": 100 }),
+            ),
+            Err(e) => events::emit(
+                &app,
+                events::APP_ERROR,
+                json!({ "code": e.code(), "message": e.to_string(), "recoverable": true }),
+            ),
+        }
+    });
+    Ok(())
 }
 
 /// `ask_ai({ question })` → `{ answer, cost }` (M3).

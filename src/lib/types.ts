@@ -57,11 +57,80 @@ export interface CreatedSession {
   session_id: string;
 }
 
-/** Returned by get_session — meta + (later) transcript + analysis. */
+/** Returned by get_session — meta + transcript + (later) analysis. */
 export interface SessionFull {
   meta: SessionMeta;
-  transcript: unknown[];
+  transcript: TranscriptEntry[];
   analysis: unknown | null;
+}
+
+/** Which side of the call an utterance/entry belongs to. */
+export type StreamTag = "you" | "remote";
+
+/** One finalized transcript line (transcript.jsonl / `transcript-entry` event). */
+export interface TranscriptEntry {
+  id: string;
+  /** Start time from capture start, in milliseconds. */
+  t_ms: number;
+  stream: StreamTag;
+  text: string;
+  /** Mean Whisper token probability, 0–1. */
+  confidence: number;
+}
+
+/** Payload of the `transcript-entry` event. */
+export interface TranscriptEntryEvent {
+  session_id: string;
+  entry: TranscriptEntry;
+}
+
+/** Payload of the `capture-state` event. */
+export interface CaptureStateEvent {
+  state: "recording" | "paused" | "ending" | "ended";
+  elapsed_ms: number;
+}
+
+/** Payload of the `whisper-status` event (EXC-WHISPER-LAG). */
+export interface WhisperStatusEvent {
+  session_id?: string;
+  lagging: boolean;
+  queue_depth: number;
+}
+
+/** One pre-flight check (from run_preflight). */
+export interface PreflightCheck {
+  id: string;
+  label: string;
+  status: "ok" | "warn" | "fail";
+  message: string;
+  fixable?: string | null;
+}
+
+/** Result of run_preflight — `ok` is false if any check failed. */
+export interface PreflightResult {
+  ok: boolean;
+  checks: PreflightCheck[];
+}
+
+/** Whisper model download/validity status. */
+export interface ModelStatus {
+  name: string;
+  downloaded: boolean;
+  size_bytes: number;
+  path: string;
+}
+
+/** Payload of `model-download-progress`. */
+export interface ModelDownloadProgress {
+  name: string;
+  pct: number;
+}
+
+/** Payload of `app-error`. */
+export interface AppErrorEvent {
+  code: string;
+  message: string;
+  recoverable: boolean;
 }
 
 /** The four live-AI feature toggles. */

@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { navigate, devices, settings, refreshSessions, refreshDevices, banner } from "$lib/stores";
-  import { createSession } from "$lib/ipc";
-  import { isTauri } from "$lib/ipc";
-  import type { LabelRef, SessionDraft, Toggles } from "$lib/types";
+  import { navigate, devices, settings, refreshSessions, refreshDevices, banner, startLive, modelDownload } from "$lib/stores";
+  import { createSession, isTauri, runPreflight, startCapture, saveSettings, downloadModel } from "$lib/ipc";
+  import type { LabelRef, SessionDraft, Toggles, PreflightResult } from "$lib/types";
 
   let name = $state("Board Call Q2");
   let participants = $state("");
@@ -15,6 +14,8 @@
   ]);
   let deviceId = $state<string>($settings?.capture_device_id ?? "");
   let starting = $state(false);
+  let preflight = $state<PreflightResult | null>(null);
+  let pendingSessionId = $state<string | null>(null);
 
   const initialToggles = $settings?.default_toggles ?? { f: true, c: true, s: false, q: true };
   let toggles = $state<Toggles>({ ...initialToggles });
@@ -35,6 +36,7 @@
 
   async function start() {
     starting = true;
+    preflight = null;
     try {
       const draft: SessionDraft = {
         name: name.trim() || null,
@@ -46,15 +48,48 @@
         context_notes: context.trim() || null,
         budget_cap: $settings?.budget_default ?? null,
       };
-      if (isTauri()) {
-        await createSession(draft);
+      if (!isTauri()) {
+        navigate("live");
+        return;
+      }
+
+      // Persist the chosen capture device so start_capture uses it.
+      if ($settings && deviceId && deviceId !== $settings.capture_device_id) {
+        const next = { ...$settings, capture_device_id: deviceId };
+        await saveSettings(next);
+        settings.set(next);
+      }
+
+      // Reuse the draft session across retries so a failed pre-flight doesn't
+      // leave orphan sessions behind.
+      let sid = pendingSessionId;
+      if (!sid) {
+        sid = (await createSession(draft)).session_id;
+        pendingSessionId = sid;
         await refreshSessions();
       }
+
+      const pf = await runPreflight(sid);
+      if (!pf.ok) {
+        preflight = pf;
+        starting = false;
+        return;
+      }
+
+      startLive(sid);
+      await startCapture(sid);
+      pendingSessionId = null;
       navigate("live");
     } catch (e) {
-      banner.set(`Could not create session: ${String(e)}`);
+      banner.set(`Could not start session: ${String(e)}`);
       starting = false;
     }
+  }
+
+  function fixModel() {
+    downloadModel($settings?.whisper_model ?? "medium").catch((e) =>
+      banner.set(`Download failed: ${String(e)}`),
+    );
   }
 
   function labelClass(n: string) {
@@ -131,6 +166,25 @@
         </div>
       </div>
       <div class="rail-foot">
+        {#if preflight && !preflight.ok}
+          <div class="preflight">
+            {#each preflight.checks.filter((c) => c.status !== "ok") as c}
+              <div class="pf-row">
+                <div class="pf-info">
+                  <span class="pf-label">{c.label}</span>
+                  <span class="pf-msg">{c.message}</span>
+                </div>
+                {#if c.fixable === "download_model"}
+                  {#if $modelDownload}
+                    <span class="pf-prog">{$modelDownload.pct}%</span>
+                  {:else}
+                    <button class="pf-btn" type="button" onclick={fixModel}>Download</button>
+                  {/if}
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
         <button class="btn btn-gold start" disabled={starting} onclick={start}>
           <span class="d"></span>{starting ? "Starting…" : "Start Session"}
         </button>
@@ -162,6 +216,13 @@
   .rail-body .field{margin-bottom:20px}
   .rail .feat-grid{grid-template-columns:repeat(2,1fr)}
   .rail-foot{padding:16px 32px 24px;border-top:1px solid var(--line-soft)}
+  .preflight{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+  .pf-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid rgba(255,107,92,.28);background:rgba(255,107,92,.08);border-radius:9px}
+  .pf-info{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+  .pf-label{font-family:var(--f-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--late)}
+  .pf-msg{font-size:12.5px;color:var(--ink-2);line-height:1.4}
+  .pf-btn{font-family:var(--f-mono);font-size:11px;color:var(--gold);background:var(--gold-soft);border:1px solid var(--gold-line);border-radius:7px;padding:6px 12px;cursor:pointer;flex:none}
+  .pf-prog{font-family:var(--f-mono);font-size:11px;color:var(--gold);flex:none}
 
   .field-label{display:block;font-family:var(--f-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-bottom:9px}
   .opt{color:var(--ink-4);text-transform:none;letter-spacing:0}

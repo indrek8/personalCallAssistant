@@ -145,3 +145,15 @@ pub fn find_remote_loopback_id() -> AppResult<Option<String>> {
         })
         .map(|(id, _, _)| id))
 }
+
+/// The `id` of the current default input device (used for capture when the user
+/// hasn't selected one). Falls back to the first input if there is no default.
+pub fn default_input_id() -> AppResult<String> {
+    let devices = input_devices_with_ids()?;
+    devices
+        .iter()
+        .find(|(_, _, is_default)| *is_default)
+        .or_else(|| devices.first())
+        .map(|(id, _, _)| id.clone())
+        .ok_or_else(|| AppError::Audio("no input devices available".into()))
+}
