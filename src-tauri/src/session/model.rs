@@ -24,9 +24,10 @@ pub struct TranscriptEntry {
 
 /// The session's own lifecycle status, persisted in `metadata.json`.
 /// See flows.md §2.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SessionStatus {
+    #[default]
     Draft,
     Recording,
     Paused,
@@ -36,12 +37,6 @@ pub enum SessionStatus {
     Completed,
     Failed,
     Recovering,
-}
-
-impl Default for SessionStatus {
-    fn default() -> Self {
-        SessionStatus::Draft
-    }
 }
 
 /// A label/tag reference attached to a session (`labels.json` defines the set).

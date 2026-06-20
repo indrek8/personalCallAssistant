@@ -16,7 +16,7 @@ Implementation-grade plan for building the MVP — detailed enough to code again
 
 1. **De-risk first.** Prove Whisper speed + dual-audio capture (M0 spikes) before building the app around them.
 2. **Vertical slices.** Every milestone ends with something runnable, not a layer in isolation.
-3. **Ground truth on disk.** The WAV + `transcript.json` are written incrementally and atomically — every failure degrades to "you still have the recording and transcript."
+3. **Ground truth on disk.** The WAV + `transcript.jsonl` are written incrementally and atomically — every failure degrades to "you still have the recording and transcript."
 4. **Thin frontend.** Svelte renders events; all real work is in Rust.
 5. **No silent failure.** Every exception in [flows.md](flows.md) §9 has a defined user-facing behavior and recovery.
 6. **Build forward.** Stable IDs + normalized storage so v1's projects/global-actions ([../roadmap.md](../roadmap.md)) are an additive migration.
@@ -31,10 +31,12 @@ Key technical decisions made in these docs (revisit consciously, not by accident
 | D2 | **No virtual mic in MVP** — passive listening only | Meeting app keeps using the real mic; virtual-mic proxy is a v1/HAL concern | Locked |
 | D3 | Incremental, atomic writes (temp→fsync→rename) | Crash safety; recovery | Locked |
 | D4 | VAD segmentation with a hard-max length | Avoids mid-word slicing and unbounded waits | Locked |
-| D5 | Whisper **`medium`** default (fallback `small`/`base`), downloaded on demand | Best accuracy at negligible cost — medium is real-time too | **Validated (M0/S1):** medium RTF 0.055, small 0.040 — both ~20× realtime |
+| D5 | Whisper **`medium`** recommended default, **`small`** the floor; the user picks in onboarding (`base` hidden from the picker); downloaded on demand | Best accuracy at negligible cost — medium is real-time too; `base` is too weak for meeting terms | **Validated (M0/S1):** medium RTF 0.055, small 0.040 — both ~20× realtime |
 | D6 | Haiku (live) / Sonnet (chat + post-analysis) | Cost vs quality split | **Locked — M0/S4 validated:** `claude-haiku-4-5` + `claude-sonnet-4-6` resolve, responses parse, token/cost accounting confirmed. |
 | D7 | Event-driven frontend, single `mode` store as router | Matches the state machine; no URL routing needed | Locked |
 | D8 | Flat-file storage with normalized IDs | Simple MVP, forward-compatible | Locked |
+| D9 | **Transcript as `transcript.jsonl`** (append-only, one entry per line) | True crash-safe incremental writes (no array-rewrite window) — the §9 "JSONL internally" option; read back into the array the UI expects | **M2** |
+| D10 | **EXC-DEV-DROP = detect → rebuild on the default device → notify** (retry-capped per side) | A mid-call device unplug must not freeze capture; seamless hot-swap stays a v1/HAL concern | **M2** |
 
 ## Milestone overview
 
@@ -47,4 +49,4 @@ M4  Post-analysis       Sonnet extraction → review/edit → save
 M5  Manage & polish     dashboard, labels, settings, onboarding, error handling
 ```
 
-**Progress:** M1 ✅ complete & merged (PR #1); **M0 ✅ complete** — all four spikes validated (s1/s2 Whisper, s3 dual-capture, s4 Claude Haiku/Sonnet + cost). **Next → [M2: Capture → Live Transcript](milestones.md#m2--capture--live-transcript-the-engine).**
+**Progress:** **M2 ✅ complete & merged** (PRs #4–#7 + closeout) — capture → VAD → Whisper → live two-sided transcript, IPC + Live UI, pre-flight, model management, crash recovery, EXC-DEV-DROP device fallback; 20 unit tests, clippy clean. M1 ✅ (PR #1); **M0 ✅** (s1–s4). **Next → [M3: Live AI](milestones.md#m3--live-ai).**

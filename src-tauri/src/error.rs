@@ -84,3 +84,17 @@ impl From<std::io::Error> for AppError {
 
 /// Convenience alias for command results.
 pub type AppResult<T> = Result<T, AppError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn codes_map_to_exc() {
+        assert_eq!(AppError::Stt("x".into()).code(), "EXC-WHISPER");
+        assert_eq!(AppError::Model("x".into()).code(), "EXC-MODEL");
+        assert_eq!(AppError::Audio("x".into()).code(), "EXC-NODEV");
+        assert_eq!(AppError::NotFound("x".into()).code(), "EXC-NOTFOUND");
+        assert_eq!(AppError::Storage("x".into()).code(), "EXC-DISK");
+    }
+}

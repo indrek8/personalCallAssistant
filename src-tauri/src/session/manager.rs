@@ -14,7 +14,7 @@ use crossbeam_channel::unbounded;
 use serde_json::json;
 use tauri::AppHandle;
 
-use crate::audio::{self, capture::CaptureSession};
+use crate::audio::{self, capture::{CaptureEvent, CaptureSession}};
 use crate::error::{AppError, AppResult};
 use crate::events;
 use crate::session::model::{SessionStatus, TranscriptEntry};
@@ -84,18 +84,36 @@ fn emit_capture_state(app: &AppHandle, state: &str, elapsed_ms: u64) {
     );
 }
 
-/// Start capturing for `session_id`: resolve devices + model from settings, wire
-/// capture → STT, spawn the event forwarders, and record `status = recording`.
+/// Start capturing for `session_id`. Records `status = recording` **up front** so
+/// a crash anywhere during start-up is still recovered (EXC-CRASH), and rolls the
+/// session back to `failed` if start-up itself fails (M3).
 pub fn start(app: &AppHandle, state: &AppState, session_id: String) -> AppResult<()> {
     let mut guard = state.live.lock().unwrap();
     if guard.is_some() {
         return Err(AppError::Audio("a session is already live".into()));
     }
 
+    storage::set_session_status(&session_id, SessionStatus::Recording)?;
+    match start_inner(app, &session_id) {
+        Ok(live) => {
+            emit_capture_state(app, "recording", 0);
+            *guard = Some(live);
+            Ok(())
+        }
+        Err(e) => {
+            // Roll back so a failed start isn't left as a phantom recording.
+            let _ = storage::set_session_status(&session_id, SessionStatus::Failed);
+            Err(e)
+        }
+    }
+}
+
+/// Resolve devices + model, wire capture → STT, and spawn the event forwarders.
+fn start_inner(app: &AppHandle, session_id: &str) -> AppResult<LiveSession> {
     let settings = storage::get_settings()?;
     let model_path = model_mgr::model_path(&settings.whisper_model)?;
-    let transcript_path = storage::transcript_path(&session_id)?;
-    let wav_path = storage::audio_path(&session_id)?;
+    let transcript_path = storage::transcript_path(session_id)?;
+    let wav_path = storage::audio_path(session_id)?;
 
     // Mic = the selected device if still present, else the system default.
     let mic_id = match settings.capture_device_id.clone() {
@@ -108,6 +126,7 @@ pub fn start(app: &AppHandle, state: &AppState, session_id: String) -> AppResult
     // Pipeline channels → forwarder threads → Tauri events.
     let (entry_tx, entry_rx) = unbounded::<TranscriptEntry>();
     let (status_tx, status_rx) = unbounded::<WhisperStatus>();
+    let (dev_tx, dev_rx) = unbounded::<CaptureEvent>();
 
     let stt = SttPipeline::start(SttConfig {
         model_path,
@@ -115,12 +134,13 @@ pub fn start(app: &AppHandle, state: &AppState, session_id: String) -> AppResult
         entry_tx,
         status_tx,
     })?;
-    let capture = CaptureSession::start(mic_id, remote_id, wav_path, Some(stt.sender()))?;
+    let capture =
+        CaptureSession::start(mic_id, remote_id, wav_path, Some(stt.sender()), Some(dev_tx))?;
 
     let mut forwarders = Vec::new();
     {
         let app = app.clone();
-        let sid = session_id.clone();
+        let sid = session_id.to_string();
         forwarders.push(thread::spawn(move || {
             while let Ok(entry) = entry_rx.recv() {
                 events::emit(
@@ -133,7 +153,7 @@ pub fn start(app: &AppHandle, state: &AppState, session_id: String) -> AppResult
     }
     {
         let app = app.clone();
-        let sid = session_id.clone();
+        let sid = session_id.to_string();
         forwarders.push(thread::spawn(move || {
             while let Ok(s) = status_rx.recv() {
                 events::emit(
@@ -144,20 +164,40 @@ pub fn start(app: &AppHandle, state: &AppState, session_id: String) -> AppResult
             }
         }));
     }
+    // EXC-DEV-DROP: surface a device fallback as an app-error toast + a refreshed
+    // device list.
+    {
+        let app = app.clone();
+        forwarders.push(thread::spawn(move || {
+            while let Ok(ev) = dev_rx.recv() {
+                let message = match &ev {
+                    CaptureEvent::FellBack { tag, device } => {
+                        format!("{tag:?} input disconnected — switched to {device}")
+                    }
+                    CaptureEvent::Lost { tag } => {
+                        format!("{tag:?} input disconnected — no fallback available")
+                    }
+                };
+                events::emit(
+                    &app,
+                    events::APP_ERROR,
+                    json!({ "code": "EXC-DEV-DROP", "message": message, "recoverable": true }),
+                );
+                if let Ok(inputs) = audio::list_input_devices() {
+                    events::emit(&app, events::DEVICE_CHANGED, json!({ "inputs": inputs }));
+                }
+            }
+        }));
+    }
 
-    storage::set_session_status(&session_id, SessionStatus::Recording)?;
-    let clock = Clock::started();
-    emit_capture_state(app, "recording", clock.elapsed_ms());
-
-    *guard = Some(LiveSession {
-        session_id,
+    Ok(LiveSession {
+        session_id: session_id.to_string(),
         capture: Some(capture),
         stt: Some(stt),
         forwarders,
-        clock,
+        clock: Clock::started(),
         paused: false,
-    });
-    Ok(())
+    })
 }
 
 /// Pause capture (passive — the meeting is unaffected).
@@ -169,6 +209,11 @@ pub fn pause(app: &AppHandle, state: &AppState) -> AppResult<()> {
     if !live.paused {
         if let Some(c) = &live.capture {
             c.pause();
+        }
+        // Finalize the in-progress utterance so audio across the pause gap isn't
+        // fused into one mis-timed entry (H1).
+        if let Some(s) = &live.stt {
+            s.flush();
         }
         live.clock.pause();
         live.paused = true;
@@ -208,23 +253,64 @@ pub fn end(app: &AppHandle, state: &AppState) -> AppResult<()> {
         .take()
         .ok_or_else(|| AppError::Audio("no live session to end".into()))?;
 
-    storage::set_session_status(&live.session_id, SessionStatus::Ending)?;
+    let _ = storage::set_session_status(&live.session_id, SessionStatus::Ending);
     emit_capture_state(app, "ending", live.clock.elapsed_ms());
 
-    // Stop capture first (finalizes the WAV and drops the tee feeding STT), then
-    // stop STT (drains + transcribes the tail), then the forwarders drain + exit.
+    // Best-effort teardown (H2): a failure in one step must not skip the others,
+    // or the session is left stuck `ending` with leaked threads. Stop capture
+    // first (finalizes the WAV and drops the tee feeding STT), then STT (drains +
+    // transcribes the tail), then join the forwarders; surface the first error.
+    let mut first_err: Option<AppError> = None;
     if let Some(capture) = live.capture.take() {
-        capture.stop()?;
+        if let Err(e) = capture.stop() {
+            first_err.get_or_insert(e);
+        }
     }
     if let Some(stt) = live.stt.take() {
-        stt.stop()?;
+        if let Err(e) = stt.stop() {
+            first_err.get_or_insert(e);
+        }
     }
     for h in live.forwarders.drain(..) {
         let _ = h.join();
     }
 
     let duration_ms = live.clock.elapsed_ms();
-    storage::set_session_completed(&live.session_id, duration_ms)?;
+    if let Err(e) = storage::set_session_completed(&live.session_id, duration_ms) {
+        first_err.get_or_insert(e);
+    }
     emit_capture_state(app, "ended", duration_ms);
-    Ok(())
+
+    match first_err {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn clock_excludes_paused_time() {
+        let mut c = Clock::started();
+        std::thread::sleep(Duration::from_millis(40));
+        c.pause();
+        let at_pause = c.elapsed_ms();
+        // While paused, elapsed is frozen (segment_start is None).
+        std::thread::sleep(Duration::from_millis(60));
+        assert!(
+            c.elapsed_ms() <= at_pause + 5,
+            "paused time leaked: {} vs {at_pause}",
+            c.elapsed_ms()
+        );
+        c.resume();
+        std::thread::sleep(Duration::from_millis(40));
+        assert!(
+            c.elapsed_ms() >= at_pause + 30,
+            "resume did not advance the clock: {}",
+            c.elapsed_ms()
+        );
+    }
 }

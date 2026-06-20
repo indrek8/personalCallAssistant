@@ -76,7 +76,7 @@ Stored in each session's `metadata.json` as `status`. Drives recovery and the da
 | Status | Meaning | Persisted artifacts so far |
 |---|---|---|
 | `draft` | form filled, not started | `metadata.json` only |
-| `recording` | actively capturing | + `audio.wav`, `transcript.json`, `ai_live.json` (all appended live) |
+| `recording` | actively capturing | + `audio.wav`, `transcript.jsonl`, `ai_live.json` (all appended live) |
 | `paused` | capture suspended | same; capture threads idle |
 | `ending` | capture stopped, finalizing files | flushing buffers |
 | `analyzing` | post-analysis API call in flight | — |
@@ -131,7 +131,7 @@ LIVE is a continuous pipeline. From the user's view it's "talk, watch transcript
 1. Two `cpal` streams capture in parallel: **mic → "You"**, **BlackHole → "Remote"**.
 2. Each stream is downmixed/resampled to 16 kHz mono, teed to (a) `audio.wav` writer, (b) a VAD segmenter.
 3. On an utterance boundary (silence gap or max-length), the segment → Whisper → a `transcript_entry { t, stream:"you"|"remote", text, confidence }`.
-4. Entry is **appended to `transcript.json`** and **emitted** (`transcript-entry` event) → appears in the UI, color-coded You vs Remote, auto-scrolling.
+4. Entry is **appended to `transcript.jsonl`** and **emitted** (`transcript-entry` event) → appears in the UI, color-coded You vs Remote, auto-scrolling.
 
 ### C2 — Live AI findings (only while any toggle is on)
 1. A batcher accumulates new entries; fires when **≥5 new entries OR ≥30 s** since last fire.
@@ -154,7 +154,7 @@ LIVE is a continuous pipeline. From the user's view it's "talk, watch transcript
 
 ### C6 — End
 1. `[End]` → confirm dialog ("End this session?").
-2. On confirm: `status=ending`, stop capture, flush WAV + last Whisper segment, persist final `transcript.json`, compute duration → transition to POST_PROCESS.
+2. On confirm: `status=ending`, stop capture, flush WAV + last Whisper segment, persist final `transcript.jsonl`, compute duration → transition to POST_PROCESS.
 
 **LIVE exceptions:** EXC-DEV-DROP (mic/output disconnect), EXC-WHISPER-LAG (backpressure), EXC-API-LIVE (Haiku/Sonnet failure), EXC-BUDGET (cap hit), EXC-SILENCE (no speech), EXC-SLEEP (system sleep), EXC-CRASH.
 
@@ -162,7 +162,7 @@ LIVE is a continuous pipeline. From the user's view it's "talk, watch transcript
 
 ## 6. Flow D — End & Post-Analysis
 
-1. **Analyzing** (`status=analyzing`): full `transcript.json` + context + live annotations → **Sonnet** → `{summary, actions[], decisions[], key_topics[]}`. Spinner with session name/duration. Typically 10–30 s.
+1. **Analyzing** (`status=analyzing`): full `transcript.jsonl` + context + live annotations → **Sonnet** → `{summary, actions[], decisions[], key_topics[]}`. Spinner with session name/duration. Typically 10–30 s.
 2. Live-detected commitments + any `[+ Save action]` items are **merged & de-duplicated** with Sonnet's extracted actions.
 3. **Reviewing** (`status=reviewing`): editable summary (`[Regenerate]`), action rows (check/uncheck, owner, due date, source quote, delete, `[+ Add manually]`), decisions list.
 4. `[Save & Close]` → write final `analysis.json`, `status=completed`, return to DASHBOARD (new session selected).
@@ -218,7 +218,7 @@ The contract for everything that can go wrong. Every one has a defined detection
 | EXC-CRASH | App quit/crash while `recording`/`analyzing` | Stale `status` on next launch | On launch: "Recovered an unsaved session" → open it in POST_PROCESS using whatever was persisted | WAV+transcript salvaged (incremental writes); offer (re)analysis |
 | EXC-CORRUPT | Session JSON won't parse | On dashboard load | Row shows "⚠ unreadable"; `[Reveal in Finder]` | List keeps working; no crash |
 
-**Design principle:** the **WAV file and `transcript.json` are ground truth and are written incrementally**, so every failure mode degrades to "you still have the recording and the transcript."
+**Design principle:** the **WAV file and `transcript.jsonl` are ground truth and are written incrementally**, so every failure mode degrades to "you still have the recording and the transcript."
 
 ---
 
