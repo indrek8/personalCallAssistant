@@ -149,6 +149,11 @@ pub fn ai_live_path(id: &str) -> AppResult<PathBuf> {
     Ok(session_dir(id)?.join("ai_live.json"))
 }
 
+/// Path to a session's Ask-AI chat log (`chat.json`, one record per line — M3).
+pub fn chat_path(id: &str) -> AppResult<PathBuf> {
+    Ok(session_dir(id)?.join("chat.json"))
+}
+
 /// Create a new session directory and write `metadata.json`; return its id.
 pub fn create_session(draft: SessionDraft) -> AppResult<SessionMeta> {
     let id = Uuid::new_v4().to_string();

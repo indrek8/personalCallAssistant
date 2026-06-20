@@ -333,6 +333,15 @@ pub fn set_toggles(state: &AppState, toggles: Toggles) -> AppResult<()> {
     Ok(())
 }
 
+/// The current live session's id + shared cost handle, if any. Ask-AI uses this to
+/// resolve the session it runs over and fold its cost into the running total.
+pub fn live_handle(state: &AppState) -> Option<(String, Arc<Mutex<f64>>)> {
+    let guard = state.live.lock().unwrap();
+    guard
+        .as_ref()
+        .map(|l| (l.session_id.clone(), l.cost.clone()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
