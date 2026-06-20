@@ -5,13 +5,17 @@
 
 import { writable, derived, get } from "svelte/store";
 import type {
+  AiFindingEvent,
   AppErrorEvent,
   AudioDevice,
   CaptureStateEvent,
+  CostUpdateEvent,
+  Finding,
   ModelDownloadProgress,
   Mode,
   SessionMeta,
   Settings,
+  Toggles,
   TranscriptEntry,
   TranscriptEntryEvent,
   WhisperStatusEvent,
@@ -57,12 +61,19 @@ export function navigate(next: Mode): void {
 /** Live transcript for the in-progress session (fed by `transcript-entry`). */
 export const transcript = writable<TranscriptEntry[]>([]);
 
-/** Live capture state: status, elapsed time, and whisper lag. */
+/** Live capture state: status, elapsed time, whisper lag, and running API cost. */
 export const live = writable<{
   status: "idle" | "recording" | "paused";
   elapsedMs: number;
   lagging: boolean;
-}>({ status: "idle", elapsedMs: 0, lagging: false });
+  cost: number;
+}>({ status: "idle", elapsedMs: 0, lagging: false, cost: 0 });
+
+/** Live-AI findings for the in-progress session (fed by `ai-finding`, newest first). */
+export const findings = writable<Finding[]>([]);
+
+/** Active live-AI feature toggles for the in-progress session. */
+export const toggles = writable<Toggles>({ f: false, c: false, s: false, q: false });
 
 /** The id of the session currently capturing (filters transcript events). */
 export const liveSessionId = writable<string | null>(null);
@@ -71,10 +82,12 @@ export const liveSessionId = writable<string | null>(null);
 export const modelDownload = writable<ModelDownloadProgress | null>(null);
 
 /** Reset the live stores for a new capture session. */
-export function startLive(sessionId: string): void {
+export function startLive(sessionId: string, initialToggles: Toggles): void {
   liveSessionId.set(sessionId);
   transcript.set([]);
-  live.set({ status: "recording", elapsedMs: 0, lagging: false });
+  findings.set([]);
+  toggles.set(initialToggles);
+  live.set({ status: "recording", elapsedMs: 0, lagging: false, cost: 0 });
 }
 
 let listenersReady = false;
@@ -99,6 +112,16 @@ export async function setupEventListeners(): Promise<void> {
   });
   await listen<WhisperStatusEvent>("whisper-status", (e) => {
     live.update((l) => ({ ...l, lagging: e.payload.lagging }));
+  });
+  await listen<AiFindingEvent>("ai-finding", (e) => {
+    if (get(liveSessionId) === e.payload.session_id) {
+      findings.update((f) => [e.payload.finding, ...f]);
+    }
+  });
+  await listen<CostUpdateEvent>("cost-update", (e) => {
+    if (get(liveSessionId) === e.payload.session_id) {
+      live.update((l) => ({ ...l, cost: e.payload.total }));
+    }
   });
   await listen<ModelDownloadProgress>("model-download-progress", (e) => {
     modelDownload.set(e.payload.pct >= 100 ? null : e.payload);

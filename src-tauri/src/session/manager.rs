@@ -6,7 +6,7 @@
 //! events. The cpal streams + Whisper state live on their own threads; this
 //! holds only `Send` handles + control signals behind a `Mutex` in Tauri state.
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
@@ -14,12 +14,14 @@ use crossbeam_channel::unbounded;
 use serde_json::json;
 use tauri::AppHandle;
 
+use crate::ai::live::{AiBatcher, AiConfig};
 use crate::audio::{self, capture::{CaptureEvent, CaptureSession}};
 use crate::error::{AppError, AppResult};
 use crate::events;
 use crate::session::model::{SessionStatus, TranscriptEntry};
-use crate::stt::{model_mgr, SttConfig, SttPipeline, WhisperStatus};
 use crate::storage;
+use crate::storage::schema::Toggles;
+use crate::stt::{model_mgr, SttConfig, SttPipeline, WhisperStatus};
 
 /// Tauri-managed application state: the single in-flight live session, if any.
 #[derive(Default)]
@@ -39,6 +41,11 @@ struct LiveSession {
     session_id: String,
     capture: Option<CaptureSession>,
     stt: Option<SttPipeline>,
+    ai: Option<AiBatcher>,
+    /// Shared with the AiBatcher so `set_toggles` lands on the next batch.
+    toggles: Arc<Mutex<Toggles>>,
+    /// Shared running API cost total (persisted to metadata on End).
+    cost: Arc<Mutex<f64>>,
     forwarders: Vec<JoinHandle<()>>,
     clock: Clock,
     paused: bool,
@@ -111,6 +118,7 @@ pub fn start(app: &AppHandle, state: &AppState, session_id: String) -> AppResult
 /// Resolve devices + model, wire capture → STT, and spawn the event forwarders.
 fn start_inner(app: &AppHandle, session_id: &str) -> AppResult<LiveSession> {
     let settings = storage::get_settings()?;
+    let meta = storage::get_session_meta(session_id)?;
     let model_path = model_mgr::model_path(&settings.whisper_model)?;
     let transcript_path = storage::transcript_path(session_id)?;
     let wav_path = storage::audio_path(session_id)?;
@@ -137,12 +145,31 @@ fn start_inner(app: &AppHandle, session_id: &str) -> AppResult<LiveSession> {
     let capture =
         CaptureSession::start(mic_id, remote_id, wav_path, Some(stt.sender()), Some(dev_tx))?;
 
+    // Live-AI batcher (M3): default toggles up front, settable mid-session via
+    // `set_toggles`; shares a running cost total persisted on End. Best-effort —
+    // it never fails start, so a missing key / API error can't break capture.
+    let toggles = Arc::new(Mutex::new(settings.default_toggles));
+    let cost = Arc::new(Mutex::new(0.0_f64));
+    let ai = AiBatcher::start(AiConfig {
+        session_id: session_id.to_string(),
+        app: app.clone(),
+        context_notes: meta.context_notes.clone(),
+        budget_cap: meta.budget_cap,
+        toggles: toggles.clone(),
+        cost: cost.clone(),
+        ai_live_path: storage::ai_live_path(session_id)?,
+    });
+    let ai_tx = ai.sender();
+
     let mut forwarders = Vec::new();
     {
         let app = app.clone();
         let sid = session_id.to_string();
         forwarders.push(thread::spawn(move || {
             while let Ok(entry) = entry_rx.recv() {
+                // Tee to the live-AI batcher before emitting (the WAV +
+                // transcript.jsonl remain ground truth either way).
+                let _ = ai_tx.send(entry.clone());
                 events::emit(
                     &app,
                     events::TRANSCRIPT_ENTRY,
@@ -194,6 +221,9 @@ fn start_inner(app: &AppHandle, session_id: &str) -> AppResult<LiveSession> {
         session_id: session_id.to_string(),
         capture: Some(capture),
         stt: Some(stt),
+        ai: Some(ai),
+        toggles,
+        cost,
         forwarders,
         clock: Clock::started(),
         paused: false,
@@ -274,9 +304,15 @@ pub fn end(app: &AppHandle, state: &AppState) -> AppResult<()> {
     for h in live.forwarders.drain(..) {
         let _ = h.join();
     }
+    // Stop the live-AI batcher last, after the forwarders have teed their final
+    // entries to it.
+    if let Some(ai) = live.ai.take() {
+        ai.stop();
+    }
 
     let duration_ms = live.clock.elapsed_ms();
-    if let Err(e) = storage::set_session_completed(&live.session_id, duration_ms) {
+    let total_cost = *live.cost.lock().unwrap();
+    if let Err(e) = storage::set_session_completed(&live.session_id, duration_ms, total_cost) {
         first_err.get_or_insert(e);
     }
     emit_capture_state(app, "ended", duration_ms);
@@ -285,6 +321,16 @@ pub fn end(app: &AppHandle, state: &AppState) -> AppResult<()> {
         Some(e) => Err(e),
         None => Ok(()),
     }
+}
+
+/// Update the live-AI feature toggles for the in-flight session (no-op if none).
+/// Applies to the *next* batch — no retroactive re-analysis (flows §5 C5).
+pub fn set_toggles(state: &AppState, toggles: Toggles) -> AppResult<()> {
+    let guard = state.live.lock().unwrap();
+    if let Some(live) = guard.as_ref() {
+        *live.toggles.lock().unwrap() = toggles;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

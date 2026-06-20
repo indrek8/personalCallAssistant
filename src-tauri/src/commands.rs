@@ -24,7 +24,7 @@ use crate::events;
 use crate::session::manager::{self, AppState};
 use crate::session::model::{CreatedSession, SessionDraft, SessionFull, SessionMeta};
 use crate::stt::model_mgr::{self, ModelStatus};
-use crate::storage::{self, schema::Settings};
+use crate::storage::{self, schema::{Settings, Toggles}};
 
 // ----------------------------------------------------------------------------
 // Real M1 commands
@@ -311,6 +311,19 @@ pub fn get_api_key_status() -> AppResult<ApiKeyStatus> {
     Ok(ApiKeyStatus {
         present: config::has_api_key(),
     })
+}
+
+/// `set_toggles({ f, c, s, q }) → ()`. Updates the live-AI features for the next
+/// batch (no retroactive re-analysis).
+#[tauri::command]
+pub fn set_toggles(
+    state: State<'_, AppState>,
+    f: bool,
+    c: bool,
+    s: bool,
+    q: bool,
+) -> AppResult<()> {
+    manager::set_toggles(&state, Toggles { f, c, s, q })
 }
 
 /// `ask_ai({ question })` → `{ answer, cost }` (M3).

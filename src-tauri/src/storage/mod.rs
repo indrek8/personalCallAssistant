@@ -144,6 +144,11 @@ pub fn audio_path(id: &str) -> AppResult<PathBuf> {
     Ok(session_dir(id)?.join("audio.wav"))
 }
 
+/// Path to a session's live-AI log (`ai_live.json`, one record per line — M3).
+pub fn ai_live_path(id: &str) -> AppResult<PathBuf> {
+    Ok(session_dir(id)?.join("ai_live.json"))
+}
+
 /// Create a new session directory and write `metadata.json`; return its id.
 pub fn create_session(draft: SessionDraft) -> AppResult<SessionMeta> {
     let id = Uuid::new_v4().to_string();
@@ -204,6 +209,12 @@ pub fn get_session(id: &str) -> AppResult<SessionFull> {
     })
 }
 
+/// Load just a session's metadata (no transcript) — used at capture start to read
+/// `context_notes` + `budget_cap` for the live-AI batcher (M3).
+pub fn get_session_meta(id: &str) -> AppResult<SessionMeta> {
+    read_json(&metadata_path(id)?)
+}
+
 // ----------------------------------------------------------------------------
 // Transcript — incremental JSONL (one entry per line)
 // ----------------------------------------------------------------------------
@@ -232,6 +243,20 @@ pub fn append_transcript_entry_at(path: &Path, entry: &TranscriptEntry) -> AppRe
 #[allow(dead_code)]
 pub fn append_transcript_entry(id: &str, entry: &TranscriptEntry) -> AppResult<()> {
     append_transcript_entry_at(&transcript_path(id)?, entry)
+}
+
+/// Append one arbitrary JSON value as a line to a `.jsonl`-style log (crash-safe
+/// append). Used for `ai_live.json` (M3) and `chat.json` (PR3).
+pub fn append_json_line(path: &Path, value: &serde_json::Value) -> AppResult<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut line = serde_json::to_string(value)?;
+    line.push('\n');
+    let mut f = fs::OpenOptions::new().create(true).append(true).open(path)?;
+    f.write_all(line.as_bytes())?;
+    f.flush()?;
+    Ok(())
 }
 
 /// Read a `transcript.jsonl` back into entries. A missing file is an empty
@@ -268,12 +293,13 @@ pub fn set_session_status(id: &str, status: SessionStatus) -> AppResult<()> {
     write_json(&path, &meta)
 }
 
-/// Mark a session completed with its final recorded duration.
-pub fn set_session_completed(id: &str, duration_ms: u64) -> AppResult<()> {
+/// Mark a session completed with its final recorded duration + total API cost.
+pub fn set_session_completed(id: &str, duration_ms: u64, total_api_cost: f64) -> AppResult<()> {
     let path = metadata_path(id)?;
     let mut meta: SessionMeta = read_json(&path)?;
     meta.status = SessionStatus::Completed;
     meta.duration_ms = duration_ms;
+    meta.total_api_cost = total_api_cost;
     write_json(&path, &meta)
 }
 

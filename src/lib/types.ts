@@ -158,6 +158,35 @@ export interface Toggles {
   q: boolean;
 }
 
+/** Live-AI finding kind. */
+export type FindingKind = "fact" | "commitment" | "suggestion" | "question";
+
+/** One normalized live-AI finding (the `finding` in an `ai-finding` event). */
+export interface Finding {
+  id: string;
+  kind: FindingKind;
+  /** Source moment in the transcript (ms from capture start). */
+  t_ms: number;
+  title: string;
+  detail?: string | null;
+  severity?: string | null;
+  who?: string | null;
+  by_when?: string | null;
+}
+
+/** Payload of the `ai-finding` event. */
+export interface AiFindingEvent {
+  session_id: string;
+  finding: Finding;
+}
+
+/** Payload of the `cost-update` event. */
+export interface CostUpdateEvent {
+  session_id: string;
+  total: number;
+  last: number;
+}
+
 /** `settings.json` (the API key is never stored here). */
 export interface Settings {
   capture_device_id?: string | null;

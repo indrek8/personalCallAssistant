@@ -1,6 +1,6 @@
 <script lang="ts">
   import { navigate, devices, settings, refreshSessions, refreshDevices, banner, startLive, modelDownload } from "$lib/stores";
-  import { createSession, isTauri, runPreflight, startCapture, saveSettings, downloadModel } from "$lib/ipc";
+  import { createSession, isTauri, runPreflight, startCapture, saveSettings, downloadModel, setToggles } from "$lib/ipc";
   import type { LabelRef, SessionDraft, Toggles, PreflightResult } from "$lib/types";
 
   let name = $state("Board Call Q2");
@@ -76,8 +76,11 @@
         return;
       }
 
-      startLive(sid);
+      startLive(sid, toggles);
       await startCapture(sid);
+      // Sync the form's toggle choice to the live-AI batcher (it starts from the
+      // saved defaults; this applies the per-session selection).
+      await setToggles(toggles);
       pendingSessionId = null;
       navigate("live");
     } catch (e) {
