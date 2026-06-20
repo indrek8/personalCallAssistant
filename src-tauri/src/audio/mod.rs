@@ -52,6 +52,29 @@ pub struct SampleChunk {
     pub samples: Vec<f32>,
 }
 
+/// Disambiguate a repeated device name with an occurrence suffix (`Name #2`,
+/// `Name #3`, …) so the persisted `id` stays unique. The first occurrence keeps
+/// the bare name; `seen` carries the running counts across the enumeration.
+fn disambiguated_id(name: &str, seen: &mut std::collections::HashMap<String, u32>) -> String {
+    let count = seen.entry(name.to_string()).or_insert(0);
+    *count += 1;
+    if *count == 1 {
+        name.to_string()
+    } else {
+        format!("{name} #{count}")
+    }
+}
+
+/// Recover the display name from an `id` produced by [`disambiguated_id`] by
+/// stripping a trailing ` #<digits>` occurrence suffix (a non-numeric `#` suffix
+/// is left intact — it's part of the real device name).
+fn display_name_from_id(id: &str) -> String {
+    id.rsplit_once(" #")
+        .filter(|(_, n)| n.chars().all(|c| c.is_ascii_digit()))
+        .map(|(base, _)| base.to_string())
+        .unwrap_or_else(|| id.to_string())
+}
+
 /// Enumerate input devices, pairing each with the stable `id` the frontend uses
 /// for selection and the `is_default` flag. The single source of truth for the
 /// id scheme so enumeration (`list_input_devices`) and resolution
@@ -75,13 +98,7 @@ fn input_devices_with_ids() -> AppResult<Vec<(String, Device, bool)>> {
         let is_default = default_name.as_deref() == Some(name.as_str());
         // Disambiguate repeated names (e.g. two identical USB mics) with an
         // occurrence suffix so the id stays unique for selection/persistence.
-        let count = seen.entry(name.clone()).or_insert(0);
-        *count += 1;
-        let id = if *count == 1 {
-            name.clone()
-        } else {
-            format!("{name} #{count}")
-        };
+        let id = disambiguated_id(&name, &mut seen);
         out.push((id, device, is_default));
     }
 
@@ -96,11 +113,7 @@ pub fn list_input_devices() -> AppResult<Vec<AudioDevice>> {
     Ok(input_devices_with_ids()?
         .into_iter()
         .map(|(id, _device, is_default)| {
-            let name = id
-                .rsplit_once(" #")
-                .filter(|(_, n)| n.chars().all(|c| c.is_ascii_digit()))
-                .map(|(base, _)| base.to_string())
-                .unwrap_or_else(|| id.clone());
+            let name = display_name_from_id(&id);
             AudioDevice {
                 id,
                 name,
@@ -156,4 +169,45 @@ pub fn default_input_id() -> AppResult<String> {
         .or_else(|| devices.first())
         .map(|(id, _, _)| id.clone())
         .ok_or_else(|| AppError::Audio("no input devices available".into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn disambiguates_repeated_names() {
+        let mut seen = HashMap::new();
+        assert_eq!(disambiguated_id("USB Mic", &mut seen), "USB Mic");
+        assert_eq!(disambiguated_id("USB Mic", &mut seen), "USB Mic #2");
+        assert_eq!(disambiguated_id("USB Mic", &mut seen), "USB Mic #3");
+        // A different name starts its own count.
+        assert_eq!(disambiguated_id("Other", &mut seen), "Other");
+    }
+
+    #[test]
+    fn id_to_display_name_round_trip() {
+        assert_eq!(display_name_from_id("USB Mic"), "USB Mic");
+        assert_eq!(display_name_from_id("USB Mic #2"), "USB Mic");
+        assert_eq!(display_name_from_id("USB Mic #10"), "USB Mic");
+        // A non-numeric '#' suffix is part of the real name, not an occurrence tag.
+        assert_eq!(display_name_from_id("Track #A"), "Track #A");
+    }
+
+    #[test]
+    fn enumeration_ids_stay_unique() {
+        // The id scheme must stay self-consistent so find_input_device_by_id can
+        // resolve every id list_input_devices produced.
+        let mut seen = HashMap::new();
+        let ids: Vec<String> = ["Mic", "Mic", "BlackHole", "Mic"]
+            .iter()
+            .map(|n| disambiguated_id(n, &mut seen))
+            .collect();
+        assert_eq!(ids, vec!["Mic", "Mic #2", "BlackHole", "Mic #3"]);
+        let mut uniq = ids.clone();
+        uniq.sort();
+        uniq.dedup();
+        assert_eq!(uniq.len(), ids.len(), "device ids must be unique");
+    }
 }

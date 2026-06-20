@@ -279,3 +279,16 @@ fn update_lag(chunk_rx: &Receiver<SampleChunk>, lagging: &mut bool, config: &Stt
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn whisper_threads_capped_to_core_range() {
+        // Always at least 1, never more than 8 — guards against oversubscribing
+        // whisper.cpp on top of Metal regardless of the host core count.
+        let n = whisper_threads();
+        assert!((1..=8).contains(&n), "thread count {n} outside [1, 8]");
+    }
+}

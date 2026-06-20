@@ -10,7 +10,7 @@ use tauri::AppHandle;
 
 use crate::ai::{ClaudeClient, MODEL_SONNET};
 use crate::audio::StreamTag;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::events;
 use crate::session::model::TranscriptEntry;
 use crate::storage;
@@ -39,11 +39,14 @@ pub fn ask(app: &AppHandle, session_id: &str, question: &str) -> AppResult<(Stri
     });
 
     let app_tok = app.clone();
-    let (answer, usage) = client.stream_text(&body, |tok| {
+    let outcome = client.stream_text(&body, |tok| {
         events::emit(&app_tok, events::AI_CHAT_TOKEN, json!({ "token": tok }));
     })?;
 
-    let cost = usage.cost(MODEL_SONNET);
+    // Surface refusals / truncation rather than presenting a partial or empty
+    // answer as if it were complete (a stopped stream is still an HTTP 200).
+    let answer = finalize_answer(outcome.text, outcome.stop_reason.as_deref())?;
+    let cost = outcome.usage.cost(MODEL_SONNET);
     events::emit(
         app,
         events::AI_CHAT_DONE,
@@ -55,12 +58,41 @@ pub fn ask(app: &AppHandle, session_id: &str, question: &str) -> AppResult<(Stri
         &json!({
             "question": question,
             "answer": answer,
-            "tokens_in": usage.input_tokens,
-            "tokens_out": usage.output_tokens,
+            "tokens_in": outcome.usage.input_tokens,
+            "tokens_out": outcome.usage.output_tokens,
             "cost": cost,
         }),
     );
     Ok((answer, cost))
+}
+
+/// Map a streamed answer + its `stop_reason` to the text shown to the user.
+/// Refusals and length cuts are flagged in-band; a stream that ended with no
+/// usable text and no clean terminal reason is a hard error.
+fn finalize_answer(text: String, stop_reason: Option<&str>) -> AppResult<String> {
+    match stop_reason {
+        Some("end_turn") | Some("stop_sequence") => Ok(text),
+        // A refusal carries no usable answer — discard any partial output.
+        Some("refusal") => Ok("(The assistant declined to answer this question.)".to_string()),
+        Some("max_tokens") => {
+            Ok(format!("{text}\n\n(Answer truncated — it reached the length limit.)"))
+        }
+        // No terminal frame (dropped/incomplete stream) or an unexpected reason.
+        other => {
+            if text.trim().is_empty() {
+                Err(AppError::Api(format!(
+                    "the answer stream ended before any response{}",
+                    other
+                        .map(|r| format!(" (stop_reason: {r})"))
+                        .unwrap_or_default()
+                )))
+            } else {
+                Ok(format!(
+                    "{text}\n\n(The answer may be incomplete — the response ended early.)"
+                ))
+            }
+        }
+    }
 }
 
 fn chat_system(notes: Option<&str>) -> String {
@@ -126,5 +158,37 @@ mod tests {
     #[test]
     fn empty_transcript_is_noted() {
         assert!(transcript_block(&[]).contains("nothing has been transcribed"));
+    }
+
+    #[test]
+    fn finalize_answer_passes_through_normal_completion() {
+        assert_eq!(finalize_answer("hi".into(), Some("end_turn")).unwrap(), "hi");
+        assert_eq!(finalize_answer("hi".into(), Some("stop_sequence")).unwrap(), "hi");
+    }
+
+    #[test]
+    fn finalize_answer_flags_refusal_and_discards_partial() {
+        let a = finalize_answer("leaked partial".into(), Some("refusal")).unwrap();
+        assert!(a.contains("declined"));
+        assert!(!a.contains("leaked partial"));
+    }
+
+    #[test]
+    fn finalize_answer_notes_truncation_but_keeps_text() {
+        let a = finalize_answer("a long answer".into(), Some("max_tokens")).unwrap();
+        assert!(a.starts_with("a long answer"));
+        assert!(a.contains("truncated"));
+    }
+
+    #[test]
+    fn finalize_answer_errors_on_empty_incomplete_stream() {
+        assert!(finalize_answer(String::new(), None).is_err());
+    }
+
+    #[test]
+    fn finalize_answer_keeps_partial_on_incomplete_stream() {
+        let a = finalize_answer("got this far".into(), None).unwrap();
+        assert!(a.starts_with("got this far"));
+        assert!(a.contains("incomplete"));
     }
 }

@@ -277,4 +277,50 @@ mod tests {
     fn silence_only_yields_nothing() {
         assert_eq!(run(&silence(3.0)).len(), 0);
     }
+
+    #[test]
+    fn hard_max_continuation_timestamps_advance() {
+        // 26 s of unbroken speech: hard-max cuts at ~12 s and ~24 s, then finish()
+        // emits the ~2 s tail. Each piece must start at its cut boundary, not reset
+        // to the original onset — guards the `cur_start_sample = total_samples` math.
+        let utts = run(&tone(26.0, 0.3));
+        let ts: Vec<u64> = utts.iter().map(|u| u.t_ms).collect();
+        assert!(utts.len() >= 3, "expected ≥3 pieces, got {} ({ts:?})", utts.len());
+        for w in utts.windows(2) {
+            assert!(w[1].t_ms > w[0].t_ms, "timestamps must advance: {ts:?}");
+        }
+        assert!((11_000..=13_000).contains(&utts[1].t_ms), "2nd piece t_ms={} ({ts:?})", utts[1].t_ms);
+        assert!((23_000..=25_000).contains(&utts[2].t_ms), "3rd piece t_ms={} ({ts:?})", utts[2].t_ms);
+    }
+
+    #[test]
+    fn finish_emits_in_progress_speech_at_eos() {
+        // Speech ending exactly at end-of-stream (no trailing silence to hang-cut)
+        // is only emitted by finish() — exercises the EOS path the other tests miss.
+        let mut sig = Vec::new();
+        sig.extend(silence(0.3));
+        sig.extend(tone(1.0, 0.3));
+        let utts = run(&sig);
+        assert_eq!(utts.len(), 1, "finish() must emit the trailing in-progress utterance");
+        let ms = samples_to_ms(utts[0].samples.len() as u64);
+        assert!((900..1600).contains(&ms), "len {ms} ms");
+    }
+
+    #[test]
+    fn min_length_gate_measures_speech_not_buffer() {
+        // ~150 ms of speech (below the 200 ms min) is dropped even though a full
+        // 200 ms pre-roll is prepended — the gate excludes pre-roll + trailing silence.
+        let mut short = Vec::new();
+        short.extend(silence(0.4)); // fills the pre-roll buffer
+        short.extend(tone(0.15, 0.3));
+        short.extend(silence(0.8)); // hang-cut
+        assert_eq!(run(&short).len(), 0, "150 ms of speech must be dropped despite pre-roll");
+
+        // ~300 ms of speech clears the gate.
+        let mut ok = Vec::new();
+        ok.extend(silence(0.4));
+        ok.extend(tone(0.3, 0.3));
+        ok.extend(silence(0.8));
+        assert_eq!(run(&ok).len(), 1, "300 ms of speech must be kept");
+    }
 }

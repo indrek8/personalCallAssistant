@@ -311,7 +311,10 @@ pub fn end(app: &AppHandle, state: &AppState) -> AppResult<()> {
     }
 
     let duration_ms = live.clock.elapsed_ms();
-    let total_cost = *live.cost.lock().unwrap();
+    // Recover from a poisoned lock instead of panicking: session completion must
+    // not depend on the AI subsystem's health — an AI-thread panic must never
+    // prevent the session being saved.
+    let total_cost = *live.cost.lock().unwrap_or_else(|e| e.into_inner());
     if let Err(e) = storage::set_session_completed(&live.session_id, duration_ms, total_cost) {
         first_err.get_or_insert(e);
     }

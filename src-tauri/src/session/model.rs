@@ -126,3 +126,48 @@ pub struct SessionFull {
     #[serde(default)]
     pub analysis: Option<serde_json::Value>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_status_wire_format_is_lowercase() {
+        // The on-disk + IPC contract: status strings are lowercase and round-trip.
+        assert_eq!(serde_json::to_string(&SessionStatus::Recording).unwrap(), "\"recording\"");
+        assert_eq!(serde_json::to_string(&SessionStatus::Completed).unwrap(), "\"completed\"");
+        assert_eq!(serde_json::to_string(&SessionStatus::Recovering).unwrap(), "\"recovering\"");
+        assert_eq!(SessionStatus::default(), SessionStatus::Draft);
+        let s: SessionStatus = serde_json::from_str("\"paused\"").unwrap();
+        assert_eq!(s, SessionStatus::Paused);
+    }
+
+    #[test]
+    fn stream_tag_wire_format_is_lowercase() {
+        // Load-bearing for transcript.jsonl + the transcript-entry event.
+        assert_eq!(serde_json::to_string(&StreamTag::You).unwrap(), "\"you\"");
+        assert_eq!(serde_json::to_string(&StreamTag::Remote).unwrap(), "\"remote\"");
+        let t: StreamTag = serde_json::from_str("\"remote\"").unwrap();
+        assert_eq!(t, StreamTag::Remote);
+    }
+
+    #[test]
+    fn from_draft_maps_fields_and_zeroes_runtime_state() {
+        let draft = SessionDraft {
+            name: Some("Board call".into()),
+            labels: vec![LabelRef { id: "b".into(), name: "Board".into(), color: None }],
+            participants: vec!["Ahmed".into(), "Sarah".into()],
+            context_notes: Some("CB-2025-041".into()),
+            budget_cap: Some(5.0),
+        };
+        let m = SessionMeta::from_draft("id-1".into(), "2026-06-20T00:00:00Z".into(), draft);
+        assert_eq!(m.id, "id-1");
+        assert_eq!(m.status, SessionStatus::Draft);
+        assert_eq!(m.name.as_deref(), Some("Board call"));
+        assert_eq!(m.participants, vec!["Ahmed".to_string(), "Sarah".to_string()]);
+        assert_eq!(m.budget_cap, Some(5.0));
+        // A brand-new session starts with zero duration + cost.
+        assert_eq!(m.duration_ms, 0);
+        assert_eq!(m.total_api_cost, 0.0);
+    }
+}

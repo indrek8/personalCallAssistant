@@ -64,3 +64,47 @@ fn default_budget() -> f64 {
 fn default_first_run() -> bool {
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_default_from_empty_object() {
+        // A fresh/partial settings.json must fill the documented defaults
+        // (technical-design.md §10).
+        let s: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(s.whisper_model, "medium");
+        assert_eq!(s.budget_default, 5.0);
+        assert!(s.first_run);
+        assert_eq!(s.capture_device_id, None);
+        assert!(!s.default_toggles.f && !s.default_toggles.c);
+    }
+
+    #[test]
+    fn toggles_default_all_off() {
+        // All-off is load-bearing: it's the "zero API calls until opt-in" guarantee.
+        let t: Toggles = serde_json::from_str("{}").unwrap();
+        assert!(!t.f && !t.c && !t.s && !t.q);
+        let d = Toggles::default();
+        assert!(!d.f && !d.c && !d.s && !d.q);
+    }
+
+    #[test]
+    fn settings_round_trip_preserves_fields() {
+        let s = Settings {
+            capture_device_id: Some("USB Mic".into()),
+            whisper_model: "small".into(),
+            default_toggles: Toggles { f: true, c: false, s: true, q: false },
+            budget_default: 12.5,
+            storage_path: None,
+            first_run: false,
+        };
+        let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(back.whisper_model, "small");
+        assert_eq!(back.budget_default, 12.5);
+        assert!(!back.first_run);
+        assert!(back.default_toggles.f && back.default_toggles.s);
+        assert_eq!(back.capture_device_id.as_deref(), Some("USB Mic"));
+    }
+}

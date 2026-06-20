@@ -36,6 +36,9 @@ const MAX_LIVE_FAILURES: u32 = 3;
 const HISTORY_CAP: usize = 400;
 /// Findings response budget — large enough that the JSON is never truncated.
 const MAX_TOKENS: u32 = 2048;
+/// Per-request timeout for live Haiku calls. Short so a stuck socket can't stall
+/// `end()` teardown — the stop flag also short-circuits retries/backoff.
+const LIVE_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Everything the batcher thread needs for one session.
 pub struct AiConfig {
@@ -102,7 +105,7 @@ impl Drop for AiBatcher {
 
 fn run_batcher(cfg: AiConfig, entry_rx: Receiver<TranscriptEntry>, stop: Arc<AtomicBool>) {
     // Resolve the key once. No key → idle (capture is unaffected); notify once.
-    let client = match ClaudeClient::from_stored() {
+    let client = match ClaudeClient::from_stored_with_timeout(LIVE_TIMEOUT) {
         Ok(c) => c,
         Err(_) => {
             events::emit(
@@ -158,20 +161,34 @@ fn run_batcher(cfg: AiConfig, entry_rx: Receiver<TranscriptEntry>, stop: Arc<Ato
             continue;
         }
 
-        let should_fire =
-            pending >= FIRE_ON_ENTRIES || (pending >= 1 && last_fire.elapsed() >= FIRE_AFTER);
-        if !should_fire {
+        if !should_fire(pending, last_fire.elapsed()) {
+            continue;
+        }
+
+        // Re-read the toggles immediately before firing: a `set_toggles` that
+        // turned everything off between the snapshot above and now must not
+        // produce a Claude call (the "all-off ⇒ zero calls" guarantee). The
+        // fresh snapshot is also what `run_batch` uses to build the ACTIVE list.
+        let toggles = *cfg.toggles.lock().unwrap();
+        if !any_on(&toggles) {
+            pending = 0;
+            last_fire = Instant::now();
             continue;
         }
 
         let window = recent_window(&history);
-        match run_batch(&client, &cfg, &system, &schema, &toggles, &window) {
+        match run_batch(&client, &cfg, &system, &schema, &toggles, &window, &stop) {
             Ok(()) => failures = 0,
             Err(BatchError::Discard(msg)) => {
                 // The HTTP call succeeded but the body didn't parse — drop this
-                // batch and keep going (not an EXC-API-LIVE failure).
+                // batch and keep going. A reachable API clears the consecutive
+                // failure count; this is not an EXC-API-LIVE failure.
+                failures = 0;
                 eprintln!("[ai] discarded batch: {msg}");
             }
+            // A call cut short by teardown isn't a real failure: don't count it
+            // toward auto-disable or emit EXC-API-LIVE — just exit the loop.
+            Err(BatchError::Api(_)) if stop.load(Ordering::Relaxed) => break,
             Err(BatchError::Api(msg)) => {
                 failures += 1;
                 eprintln!("[ai] live call failed ({failures}/{MAX_LIVE_FAILURES}): {msg}");
@@ -204,6 +221,13 @@ fn run_batcher(cfg: AiConfig, entry_rx: Receiver<TranscriptEntry>, stop: Arc<Ato
 
 fn any_on(t: &Toggles) -> bool {
     t.f || t.c || t.s || t.q
+}
+
+/// Whether a batch should fire: enough new entries, or ≥1 new entry once the time
+/// window has elapsed. Pure so the fire policy is unit-testable (D12: ≥5 entries
+/// OR ≥30 s).
+fn should_fire(pending: usize, since_last_fire: Duration) -> bool {
+    pending >= FIRE_ON_ENTRIES || (pending >= 1 && since_last_fire >= FIRE_AFTER)
 }
 
 fn emit_error(cfg: &AiConfig, code: &str, message: &str) {
@@ -241,11 +265,15 @@ fn run_batch(
     schema: &Value,
     toggles: &Toggles,
     window: &[TranscriptEntry],
+    stop: &AtomicBool,
 ) -> Result<(), BatchError> {
     if window.is_empty() {
         return Ok(());
     }
     let user = prompts::user_message(toggles, window);
+    // The frozen system prompt carries a cache_control breakpoint, but Haiku only
+    // caches a prefix once it clears the model's ~4K-token minimum — so this is a
+    // no-op for short prep notes and only pays off when the notes are sizeable.
     let body = json!({
         "model": MODEL_HAIKU,
         "max_tokens": MAX_TOKENS,
@@ -256,17 +284,14 @@ fn run_batch(
 
     let started = Instant::now();
     let resp = client
-        .messages(&body)
+        .messages_cancellable(&body, Some(stop))
         .map_err(|e| BatchError::Api(e.to_string()))?;
     let latency_ms = started.elapsed().as_millis() as u64;
-
-    let findings: Findings = serde_json::from_str(&resp.text())
-        .map_err(|e| BatchError::Discard(format!("schema parse: {e}")))?;
-
     let t_ms = window.last().map(|e| e.t_ms).unwrap_or(0);
-    let normalized = findings.normalize(t_ms);
 
-    // Cost: update the running total, emit cost-update for the live meter.
+    // The call is billed whether or not the body parses, so account for the cost
+    // and push the meter *before* parsing — a discarded (refusal / malformed)
+    // batch must not be free on the meter or lost on crash recovery.
     let last = resp.usage.cost(MODEL_HAIKU);
     let total = {
         let mut c = cfg.cost.lock().unwrap();
@@ -279,8 +304,25 @@ fn run_batch(
         json!({ "session_id": cfg.session_id, "total": total, "last": last }),
     );
 
-    // Crash-safe call record (cost + findings) appended to ai_live.json.
-    let record = json!({
+    // Parse the structured findings; a malformed/empty body (e.g. a refusal) is
+    // dropped, but the call is still recorded below with its cost.
+    let (normalized, discard) = match serde_json::from_str::<Findings>(&resp.text()) {
+        Ok(f) => (f.normalize(t_ms), None),
+        Err(e) => (Vec::new(), Some(format!("schema parse: {e}"))),
+    };
+
+    // Emit findings (none on a discarded batch) before they move into the record.
+    for finding in &normalized {
+        events::emit(
+            &cfg.app,
+            events::AI_FINDING,
+            json!({ "session_id": cfg.session_id, "finding": finding }),
+        );
+    }
+
+    // Crash-safe call record (cost + findings) appended to ai_live.json — written
+    // even on a discard so the billed cost survives a crash before End.
+    let mut record = json!({
         "t_ms": t_ms,
         "model": MODEL_HAIKU,
         "tokens_in": resp.usage.input_tokens,
@@ -290,16 +332,15 @@ fn run_batch(
         "latency_ms": latency_ms,
         "findings": normalized,
     });
+    if let Some(reason) = &discard {
+        record["discarded"] = json!(reason);
+    }
     let _ = storage::append_json_line(&cfg.ai_live_path, &record);
 
-    for finding in normalized {
-        events::emit(
-            &cfg.app,
-            events::AI_FINDING,
-            json!({ "session_id": cfg.session_id, "finding": finding }),
-        );
+    match discard {
+        Some(reason) => Err(BatchError::Discard(reason)),
+        None => Ok(()),
     }
-    Ok(())
 }
 
 /// The last ~3 minutes of history, by entry timestamp.
@@ -470,5 +511,28 @@ mod tests {
         )
         .unwrap();
         assert_eq!(f.normalize(0)[0]["severity"], "info");
+    }
+
+    #[test]
+    fn any_on_true_iff_a_toggle_is_set() {
+        assert!(!any_on(&Toggles { f: false, c: false, s: false, q: false }));
+        assert!(any_on(&Toggles { f: true, c: false, s: false, q: false }));
+        assert!(any_on(&Toggles { f: false, c: false, s: false, q: true }));
+        assert!(any_on(&Toggles { f: true, c: true, s: true, q: true }));
+    }
+
+    #[test]
+    fn fire_policy_matches_thresholds() {
+        // Enough new entries fires immediately, regardless of elapsed time.
+        assert!(should_fire(FIRE_ON_ENTRIES, Duration::ZERO));
+        assert!(should_fire(FIRE_ON_ENTRIES + 3, Duration::ZERO));
+        // Below the entry threshold but past the time window with ≥1 entry.
+        assert!(should_fire(1, FIRE_AFTER));
+        assert!(should_fire(FIRE_ON_ENTRIES - 1, FIRE_AFTER));
+        // Below both thresholds → no fire.
+        assert!(!should_fire(FIRE_ON_ENTRIES - 1, FIRE_AFTER - Duration::from_millis(1)));
+        assert!(!should_fire(1, Duration::ZERO));
+        // Zero pending never fires, even after a long idle (no new entries).
+        assert!(!should_fire(0, FIRE_AFTER * 10));
     }
 }

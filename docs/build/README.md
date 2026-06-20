@@ -42,6 +42,7 @@ Key technical decisions made in these docs (revisit consciously, not by accident
 | D13 | **Ask-AI streamed** (SSE → `ai-chat-token`) | Word-by-word answers feel right mid-call | **M3** |
 | D14 | Models `claude-haiku-4-5` (live) / `claude-sonnet-4-6` (chat) — bare ids | Verified current against the API reference | **M3** |
 | D15 | **AI runs on std threads + `reqwest::blocking`**, not tokio | Matches the M2 concurrency model (capture / STT / model_mgr all sync) | **M3** |
+| D16 | **Ask-AI is not budget-gated** — `EXC-BUDGET` throttles automatic live (Haiku) spend only; an explicit user Ask-AI question always runs (its cost is still folded into the session total) | An explicit user action shouldn't be silently blocked mid-call | **M3 (hardening)** |
 
 ## Milestone overview
 
@@ -54,4 +55,4 @@ M4  Post-analysis       Sonnet extraction → review/edit → save
 M5  Manage & polish     dashboard, labels, settings, onboarding, error handling
 ```
 
-**Progress:** **M3 ✅ complete & merged** (PRs #9–#12) — Claude client + Keychain keys, live Haiku findings + F/C/S/Q toggles + cost + budget/failure handling, streamed Sonnet Ask-AI, save-action persistence; 42 unit tests, clippy clean. M2 ✅ (PRs #4–#8) — capture → live two-sided transcript. M1 ✅ (PR #1); **M0 ✅** (s1–s4). **Next → [M4: Post-Analysis & Review](milestones.md#m4--post-analysis--review).**
+**Progress:** **M3 ✅ complete & merged** (PRs #9–#12) — Claude client + Keychain keys, live Haiku findings + F/C/S/Q toggles + cost + budget/failure handling, streamed Sonnet Ask-AI, save-action persistence; **78 unit tests**, clippy clean (a post-closeout hardening + coverage pass tightened teardown, streaming-error/refusal handling, and cost accounting — see [m3-plan.md §Post-closeout hardening](m3-plan.md#post-closeout-hardening)). M2 ✅ (PRs #4–#8) — capture → live two-sided transcript. M1 ✅ (PR #1); **M0 ✅** (s1–s4). **Next → [M4: Post-Analysis & Review](milestones.md#m4--post-analysis--review).**
