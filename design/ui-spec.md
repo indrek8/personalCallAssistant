@@ -78,12 +78,12 @@ This is where the user lands every time they open the app. It uses a **mail-inbo
 |                                  |                                                |
 | Session Name     Labels        Date    Duration  Actions |                             |
 |──────────────────────────────────────────|                                                |
-| Board Call Q2    KGL           Mar 28  47min     3 (1⚠)  |  Board Call Q2              |
-| Sprint Review    Kifiya        Mar 27  28min     1        |  Mar 28, 2026 | 47min |$0.85|
+| Board Call Q2    Acme           Mar 28  47min     3 (1⚠)  |  Board Call Q2              |
+| Sprint Review    Globex        Mar 27  28min     1        |  Mar 28, 2026 | 47min |$0.85|
 | 1:1 Sarah        Internal     Mar 26  22min     1        |                             |
-| Finance Sync     KGL           Mar 25  32min     2        |  SUMMARY                    |
-| API Planning     Kifiya        Mar 22  41min     done     |  Discussed CBUAE Phase 2    |
-| Tech Review      KGL Dev      Mar 20  55min     done     |  timeline — central bank    |
+| Finance Sync     Acme           Mar 25  32min     2        |  SUMMARY                    |
+| API Planning     Globex        Mar 22  41min     done     |  Discussed CBUAE Phase 2    |
+| Tech Review      Acme Dev      Mar 20  55min     done     |  timeline — central bank    |
 |                                  |  extended to Aug 2026...     |
 |                                  |                              |
 |                                  |  ACTIONS              3 of 4|
@@ -157,7 +157,7 @@ User clicked [+ New Session] from the dashboard. Full-screen focused form — th
 |                                                          |
 |  Session name: [Board Call Q2               ]            |
 |                                                          |
-|  Labels:       [KGL] [Board] [+ add label   ]           |
+|  Labels:       [Acme] [Board] [+ add label   ]          |
 |                                                          |
 |  Participants: [Sarah, Ahmed                ] (optional) |
 |                                                          |

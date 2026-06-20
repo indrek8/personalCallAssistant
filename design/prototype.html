@@ -150,8 +150,8 @@ body::after{
 .s-row .meta{display:flex;align-items:center;gap:8px}
 .labels{display:flex;gap:5px}
 .lbl{font-size:10px;font-weight:600;padding:1.5px 7px;border-radius:5px;letter-spacing:.01em}
-.lbl-kgl{background:rgba(231,178,76,.13);color:var(--gold);box-shadow:inset 0 0 0 1px rgba(231,178,76,.2)}
-.lbl-kif{background:rgba(84,197,222,.12);color:var(--commit);box-shadow:inset 0 0 0 1px rgba(84,197,222,.2)}
+.lbl-acme{background:rgba(231,178,76,.13);color:var(--gold);box-shadow:inset 0 0 0 1px rgba(231,178,76,.2)}
+.lbl-globex{background:rgba(84,197,222,.12);color:var(--commit);box-shadow:inset 0 0 0 1px rgba(84,197,222,.2)}
 .lbl-int{background:rgba(178,149,232,.12);color:var(--ask);box-shadow:inset 0 0 0 1px rgba(178,149,232,.2)}
 .lbl-dev{background:rgba(138,196,121,.12);color:var(--suggest);box-shadow:inset 0 0 0 1px rgba(138,196,121,.2)}
 .s-row .right{margin-left:auto;display:flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:10.5px;color:var(--ink-3)}
@@ -414,16 +414,16 @@ textarea.inp{resize:none;line-height:1.6;min-height:120px}
         <div class="list-pane rise">
           <div class="list-head">
             <div class="eyebrow">12 sessions</div>
-            <div class="seg"><button class="on">All</button><button>KGL</button><button>Kifiya</button></div>
+            <div class="seg"><button class="on">All</button><button>Acme</button><button>Globex</button></div>
           </div>
           <div class="list scroll">
             <div class="s-row sel">
               <div class="top"><span class="name">Board Call Q2</span><span class="date">Mar 28</span></div>
-              <div class="meta"><div class="labels"><span class="lbl lbl-kgl">KGL</span></div><div class="right"><span class="dur">47m</span><span class="dot-late"></span>3 actions</div></div>
+              <div class="meta"><div class="labels"><span class="lbl lbl-acme">Acme</span></div><div class="right"><span class="dur">47m</span><span class="dot-late"></span>3 actions</div></div>
             </div>
             <div class="s-row">
               <div class="top"><span class="name">Sprint Review</span><span class="date">Mar 27</span></div>
-              <div class="meta"><div class="labels"><span class="lbl lbl-kif">Kifiya</span></div><div class="right"><span class="dur">28m</span>1 action</div></div>
+              <div class="meta"><div class="labels"><span class="lbl lbl-globex">Globex</span></div><div class="right"><span class="dur">28m</span>1 action</div></div>
             </div>
             <div class="s-row">
               <div class="top"><span class="name">1:1 with Sarah</span><span class="date">Mar 26</span></div>
@@ -431,15 +431,15 @@ textarea.inp{resize:none;line-height:1.6;min-height:120px}
             </div>
             <div class="s-row">
               <div class="top"><span class="name">Finance Sync</span><span class="date">Mar 25</span></div>
-              <div class="meta"><div class="labels"><span class="lbl lbl-kgl">KGL</span></div><div class="right"><span class="dur">32m</span>2 actions</div></div>
+              <div class="meta"><div class="labels"><span class="lbl lbl-acme">Acme</span></div><div class="right"><span class="dur">32m</span>2 actions</div></div>
             </div>
             <div class="s-row">
               <div class="top"><span class="name">API Planning</span><span class="date">Mar 22</span></div>
-              <div class="meta"><div class="labels"><span class="lbl lbl-kif">Kifiya</span></div><div class="right"><span class="dur">41m</span>done</div></div>
+              <div class="meta"><div class="labels"><span class="lbl lbl-globex">Globex</span></div><div class="right"><span class="dur">41m</span>done</div></div>
             </div>
             <div class="s-row">
               <div class="top"><span class="name">Tech Review</span><span class="date">Mar 20</span></div>
-              <div class="meta"><div class="labels"><span class="lbl lbl-dev">KGL Dev</span></div><div class="right"><span class="dur">55m</span>done</div></div>
+              <div class="meta"><div class="labels"><span class="lbl lbl-dev">Acme Dev</span></div><div class="right"><span class="dur">55m</span>done</div></div>
             </div>
           </div>
         </div>
@@ -552,7 +552,7 @@ textarea.inp{resize:none;line-height:1.6;min-height:120px}
           <div class="rail-body scroll">
             <div class="field"><label>Session name</label><input class="inp" value="Board Call Q2"></div>
             <div class="field"><label>Labels</label>
-              <div class="chips-in"><span class="lbl lbl-kgl">KGL</span><span class="lbl lbl-int">Board</span><button class="add">+ add</button></div>
+              <div class="chips-in"><span class="lbl lbl-acme">Acme</span><span class="lbl lbl-int">Board</span><button class="add">+ add</button></div>
             </div>
             <div class="field"><label>Participants <span style="color:var(--ink-4);text-transform:none;letter-spacing:0">· optional</span></label><input class="inp" placeholder="Sarah, Ahmed"></div>
             <div class="field"><label>Live analysis</label>

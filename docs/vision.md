@@ -41,11 +41,11 @@ No tabs, no multiple views. One window. Sidebar for navigation, main area shows 
 | ACTIONS (12)     |                                          |
 |                  |                                          |
 | PROJECTS         |                                          |
-|  > KGL (3 ses)   |                                          |
+|  > Acme (3 ses)  |                                          |
 |    Board Q2      |                                          |
 |    Tech Review   |                                          |
 |    Finance Sync  |                                          |
-|  > Kifiya (2)    |                                          |
+|  > Globex (2)    |                                          |
 |    Sprint Rev    |                                          |
 |    API Planning  |                                          |
 |  > Internal (1)  |                                          |
@@ -80,7 +80,7 @@ The main area has five states depending on what's happening.
 +------------------------------------------+
 | NEW SESSION                              |
 |                                          |
-| Project:     [KGL Financial       v]     |
+| Project:     [Acme Financial      v]     |
 | Session name:[Board Call Q2        ]     |
 | Template:    [Investor Call       v]     |
 | Budget:      [$5.00               ]     |
@@ -105,7 +105,7 @@ The main area has five states depending on what's happening.
 
 ```
 +------------------------------------------+
-| *REC  KGL / Board Call Q2      00:23:15  |
+| *REC  Acme / Board Call Q2     00:23:15  |
 | [||] [End] [!Bookmark] [$0.12/$5]       |
 | Mic: AirPods Pro ▾  | Spk: MacBook ▾    |
 +------------------------------------------+
@@ -170,7 +170,7 @@ The main area has five states depending on what's happening.
 
 ```
 +------------------------------------------+
-| POST-ANALYSIS: KGL / Board Call Q2       |
+| POST-ANALYSIS: Acme / Board Call Q2      |
 | Mar 28, 2026 | 47 min | 3 participants  |
 +------------------------------------------+
 | SUMMARY                          [Regen] |
@@ -214,7 +214,7 @@ You can: edit the AI summary (or [Regen]); review extracted actions (check/unche
 
 ```
 +------------------------------------------+
-| KGL / Board Call Q2                      |
+| Acme / Board Call Q2                     |
 | Mar 28, 2026 | 47 min | $0.85 API cost  |
 +------------------------------------------+
 | SUMMARY                                  |
@@ -254,19 +254,19 @@ You can: edit the AI summary (or [Regen]); review extracted actions (check/unche
 +------------------------------------------+
 | MINE                              8 open |
 | [pending v] Send CBUAE timeline to board |
-|   KGL > Board Call Q2 | Due: Apr 5      |
+|   Acme > Board Call Q2 | Due: Apr 5     |
 | [pending v] Prepare budget revision Q3   |
-|   KGL > Finance Sync  | Due: Apr 10     |
+|   Acme > Finance Sync  | Due: Apr 10    |
 |------------------------------------------|
 | WAITING ON OTHERS                 4 open |
 | [pending v] Ahmed: Cost estimates        |
-|   KGL > Board Call Q2 | Due: Apr 8  !!! |
+|   Acme > Board Call Q2 | Due: Apr 8 !!! |
 | [pending v] Dev team: API sandbox setup  |
-|   Kifiya > Sprint Rev  | Due: Apr 12    |
+|   Globex > Sprint Rev  | Due: Apr 12    |
 +------------------------------------------+
 ```
 
-Each action has an inline **status dropdown** (pending / in progress / done / won't do / postponed) — one click to change status, no modal. The "KGL > Board Call Q2" link jumps to that session. Filters at the top: project, status, owner (mine/others/specific), and search. Overdue items get a visual indicator.
+Each action has an inline **status dropdown** (pending / in progress / done / won't do / postponed) — one click to change status, no modal. The "Acme > Board Call Q2" link jumps to that session. Filters at the top: project, status, owner (mine/others/specific), and search. Overdue items get a visual indicator.
 
 ### Session Playback
 

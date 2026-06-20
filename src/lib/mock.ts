@@ -8,9 +8,9 @@ import type { SessionMeta } from "./types";
 /** Map a label name to one of the prototype's colored chip classes. */
 export function labelClass(name: string): string {
   const n = name.toLowerCase();
-  if (n.includes("kgl dev") || n.includes("dev")) return "lbl-dev";
-  if (n.includes("kgl")) return "lbl-kgl";
-  if (n.includes("kif")) return "lbl-kif";
+  if (n.includes("acme dev") || n.includes("dev")) return "lbl-dev";
+  if (n.includes("acme")) return "lbl-acme";
+  if (n.includes("globex")) return "lbl-globex";
   return "lbl-int";
 }
 
@@ -47,7 +47,7 @@ export const SAMPLE_SESSIONS: SessionMeta[] = [
     id: "sample-1",
     status: "completed",
     name: "Board Call Q2",
-    labels: [{ id: "kgl", name: "KGL" }],
+    labels: [{ id: "acme", name: "Acme" }],
     date: "2026-03-28T10:00:00Z",
     duration_ms: 47 * 60000,
     participants: ["Sarah", "Ahmed"],
@@ -59,7 +59,7 @@ export const SAMPLE_SESSIONS: SessionMeta[] = [
     id: "sample-2",
     status: "completed",
     name: "Sprint Review",
-    labels: [{ id: "kif", name: "Kifiya" }],
+    labels: [{ id: "globex", name: "Globex" }],
     date: "2026-03-27T14:00:00Z",
     duration_ms: 28 * 60000,
     participants: [],

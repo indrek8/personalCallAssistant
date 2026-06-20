@@ -9,7 +9,7 @@
   import Mark from "$lib/components/Mark.svelte";
 
   let search = $state("");
-  let segment = $state<"All" | "KGL" | "Kifiya">("All");
+  let segment = $state<"All" | "Acme" | "Globex">("All");
 
   const filtered = $derived(
     $sessions.filter((s) => {
@@ -52,7 +52,7 @@
       <div class="list-head">
         <div class="eyebrow">{filtered.length} session{filtered.length === 1 ? "" : "s"}</div>
         <div class="seg">
-          {#each ["All", "KGL", "Kifiya"] as const as seg}
+          {#each ["All", "Acme", "Globex"] as const as seg}
             <button class:on={segment === seg} onclick={() => (segment = seg)}>{seg}</button>
           {/each}
         </div>

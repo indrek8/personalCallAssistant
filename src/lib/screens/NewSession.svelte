@@ -10,7 +10,7 @@
     `Follow-up to the Q1 board meeting.\n\nDiscussing CBUAE Phase 2 delays and the KYC module certification timeline. Central bank circular CB-2025-041 sets the Phase 2 deadline at Aug 2026.\n\nAhmed owes cost estimates from the last call. Sarah is tracking the KYC vendor relationship.`,
   );
   let labels = $state<LabelRef[]>([
-    { id: "kgl", name: "KGL" },
+    { id: "acme", name: "Acme" },
     { id: "board", name: "Board" },
   ]);
   let deviceId = $state<string>($settings?.capture_device_id ?? "");
@@ -59,8 +59,8 @@
 
   function labelClass(n: string) {
     const x = n.toLowerCase();
-    if (x.includes("kgl")) return "lbl-kgl";
-    if (x.includes("kif")) return "lbl-kif";
+    if (x.includes("acme")) return "lbl-acme";
+    if (x.includes("globex")) return "lbl-globex";
     if (x.includes("board")) return "lbl-int";
     return "lbl-int";
   }
