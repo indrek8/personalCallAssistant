@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { navigate, devices, settings, refreshDevices, banner } from "$lib/stores";
-  import { saveSettings, isTauri } from "$lib/ipc";
-  import type { Settings as SettingsT, Toggles } from "$lib/types";
+  import { navigate, devices, settings, refreshDevices, banner, modelDownload } from "$lib/stores";
+  import { saveSettings, isTauri, listModels, downloadModel } from "$lib/ipc";
+  import type { Settings as SettingsT, Toggles, ModelStatus } from "$lib/types";
 
   type NavKey = "api" | "audio" | "transcription" | "storage";
   let section = $state<NavKey>("api");
@@ -28,11 +28,29 @@
     { k: "q", n: "Questions" },
   ];
 
-  const MODELS: { id: string; name: string; desc: string }[] = [
-    { id: "base", name: "Base", desc: "Fastest · lower accuracy" },
-    { id: "small", name: "Small", desc: "Balanced · fast" },
-    { id: "medium", name: "Medium", desc: "Best accuracy · recommended" },
-  ];
+  let models = $state<ModelStatus[]>([]);
+  let dlActive = false;
+
+  async function loadModels() {
+    try {
+      models = (await listModels()).filter((m) => m.offered);
+    } catch (e) {
+      banner.set(`Could not list models: ${String(e)}`);
+    }
+  }
+
+  $effect(() => {
+    if (section === "transcription" && models.length === 0) void loadModels();
+  });
+  // Refresh statuses when a download finishes (store returns to null).
+  $effect(() => {
+    const dl = $modelDownload;
+    if (dl) dlActive = true;
+    else if (dlActive) {
+      dlActive = false;
+      void loadModels();
+    }
+  });
 
   async function persist() {
     if (!isTauri()) return;
@@ -123,14 +141,30 @@
           <div class="eyebrow">Transcription</div>
           <div class="field">
             <span class="field-label">Whisper model</span>
-            <div class="radio">
-              {#each MODELS as m}
-                <button class="rad" class:on={model === m.id} onclick={() => { model = m.id; persist(); }}>
-                  <div class="rn"><span class="ring"></span>{m.name}</div>
-                  <div class="rd">{m.desc}</div>
-                </button>
+            <div class="model-list">
+              {#each models as m}
+                <div class="model-row" class:on={model === m.name}>
+                  <button class="model-pick" onclick={() => { model = m.name; persist(); }}>
+                    <span class="ring"></span>
+                    <span class="ml-name">{m.label}</span>
+                    <span class="ml-desc">{m.approx_mb} MB · {m.speed_note}</span>
+                  </button>
+                  <div class="ml-action">
+                    {#if m.downloaded}
+                      <span class="dl-ok">✓ downloaded</span>
+                    {:else if $modelDownload && $modelDownload.name === m.name}
+                      <span class="dl-prog">{$modelDownload.pct}%</span>
+                    {:else}
+                      <button class="btn" onclick={() => downloadModel(m.name)}>Download</button>
+                    {/if}
+                  </div>
+                </div>
               {/each}
+              {#if models.length === 0}
+                <div class="ml-desc" style="padding:8px">Loading models…</div>
+              {/if}
             </div>
+            <div class="hint">The active model is used for new sessions. “Medium” is the most accurate; “Small” downloads and runs faster.</div>
           </div>
         </div>
       {:else}
@@ -172,13 +206,18 @@
   .select-wrap select{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:36px}
   .select-wrap .caret{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--ink-4);pointer-events:none}
 
-  .radio{display:flex;gap:10px}
-  .rad{flex:1;border:1px solid var(--line);background:var(--bg-2);border-radius:10px;padding:13px 14px;cursor:pointer;transition:.16s;text-align:left;font-family:var(--f-ui);color:var(--ink)}
-  .rad.on{border-color:var(--gold-line);background:var(--gold-soft)}
-  .rad .rn{font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px}
-  .rad .rd{font-size:11px;color:var(--ink-3);margin-top:5px}
   .ring{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--line);flex:none}
-  .rad.on .ring{border-color:var(--gold);background:radial-gradient(circle,var(--gold) 42%,transparent 46%)}
+  .model-list{display:flex;flex-direction:column;gap:10px;max-width:560px}
+  .model-row{display:flex;align-items:center;gap:12px;border:1px solid var(--line);background:var(--bg-2);border-radius:10px;padding:4px 12px 4px 4px;transition:.16s}
+  .model-row.on{border-color:var(--gold-line);background:var(--gold-soft)}
+  .model-row.on .ring{border-color:var(--gold);background:radial-gradient(circle,var(--gold) 42%,transparent 46%)}
+  .model-pick{flex:1;display:flex;align-items:center;gap:10px;background:none;border:0;cursor:pointer;text-align:left;padding:9px;font-family:var(--f-ui);color:var(--ink)}
+  .ml-name{font-weight:600;font-size:13px}
+  .ml-desc{font-size:11px;color:var(--ink-3)}
+  .ml-action{flex:none}
+  .dl-ok{font-family:var(--f-mono);font-size:10px;color:var(--suggest)}
+  .dl-prog{font-family:var(--f-mono);font-size:11px;color:var(--gold)}
+  .hint{font-size:12px;color:var(--ink-4);line-height:1.5;margin-top:12px;max-width:520px}
 
   .set-row{display:flex;align-items:center;justify-content:space-between;gap:14px;border:1px solid var(--line-soft);border-radius:10px;padding:13px 15px}
   .set-row .si{flex:1}

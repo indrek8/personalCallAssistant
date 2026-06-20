@@ -62,17 +62,42 @@ pub fn is_valid_ggml(path: &std::path::Path) -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelStatus {
     pub name: String,
+    /// Display name, e.g. "Small".
+    pub label: String,
+    /// Approximate download size in MB (for setup/Settings estimates).
+    pub approx_mb: u32,
+    /// Short speed / quality note shown next to the option.
+    pub speed_note: String,
+    /// Whether this model is shown in the onboarding/Settings picker. `base` is
+    /// hidden — `small` is the floor, `medium` the recommended default.
+    pub offered: bool,
     pub downloaded: bool,
     pub size_bytes: u64,
     pub path: String,
 }
 
-/// Status of a single model.
+/// Static catalog metadata: `(label, approx_mb, speed_note, offered)`. Speeds
+/// are the M0/S1 measurements on Apple Silicon.
+fn model_info(name: &str) -> (&'static str, u32, &'static str, bool) {
+    match name {
+        "base" => ("Base", 142, "fastest · lower accuracy", false),
+        "small" => ("Small", 466, "~25× real-time · balanced", true),
+        "medium" => ("Medium", 1500, "~18× real-time · best accuracy", true),
+        _ => ("Custom", 0, "", false),
+    }
+}
+
+/// Status of a single model (catalog metadata + on-disk presence).
 pub fn model_status(name: &str) -> AppResult<ModelStatus> {
     let path = model_path(name)?;
     let size_bytes = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    let (label, approx_mb, speed_note, offered) = model_info(name);
     Ok(ModelStatus {
         name: name.to_string(),
+        label: label.to_string(),
+        approx_mb,
+        speed_note: speed_note.to_string(),
+        offered,
         downloaded: is_valid_ggml(&path),
         size_bytes,
         path: path.to_string_lossy().to_string(),
@@ -221,6 +246,17 @@ mod tests {
         let url = model_url("medium");
         assert!(url.starts_with("https://huggingface.co/"));
         assert!(url.ends_with("/ggml-medium.bin"));
+    }
+
+    #[test]
+    fn catalog_offers_small_and_medium_not_base() {
+        // Catalog metadata is static (independent of what's on disk).
+        assert!(!model_status("base").unwrap().offered, "base should be hidden");
+        assert!(model_status("small").unwrap().offered);
+        let medium = model_status("medium").unwrap();
+        assert!(medium.offered);
+        assert_eq!(medium.label, "Medium");
+        assert!(medium.approx_mb > 1000);
     }
 
     #[test]
