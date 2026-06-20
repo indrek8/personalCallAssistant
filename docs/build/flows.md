@@ -162,6 +162,11 @@ LIVE is a continuous pipeline. From the user's view it's "talk, watch transcript
 
 ## 6. Flow D — End & Post-Analysis
 
+> ✅ **Implemented in M4.** End finalizes to `ending`; the Post screen calls `run_post_analysis`
+> (`analyzing → reviewing`), and Save & Close completes. EXC-CLOSE-DURING is simplified for M4:
+> a crashed `analyzing` recovers to `completed` transcript-only, and a quit mid-`reviewing` keeps its
+> draft `analysis.json` (D20) — recover-into-review is M5. See [m4-plan.md](m4-plan.md).
+
 1. **Analyzing** (`status=analyzing`): full `transcript.jsonl` + context + live annotations → **Sonnet** → `{summary, actions[], decisions[], key_topics[]}`. Spinner with session name/duration. Typically 10–30 s.
 2. Live-detected commitments + any `[+ Save action]` items are **merged & de-duplicated** with Sonnet's extracted actions.
 3. **Reviewing** (`status=reviewing`): editable summary (`[Regenerate]`), action rows (check/uncheck, owner, due date, source quote, delete, `[+ Add manually]`), decisions list.

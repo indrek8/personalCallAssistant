@@ -103,12 +103,14 @@ M0 Spikes ─► M1 Skeleton ─► M2 Capture→Transcript ─► M3 Live AI �
 
 **Goal:** End → Sonnet extraction → review/edit → save.
 
-- [ ] `ai/analyze.rs`: full transcript + context + live annotations → Sonnet → `{summary,actions,decisions,key_topics}`.
-- [ ] Merge/dedupe Sonnet actions with live commitments + saved actions.
-- [ ] IPC: `run_post_analysis` (progress events), `save_analysis`, `update_action_status`.
-- [ ] Post screen (two-pane): editable summary `[Regenerate]`, action rows (check/owner/due/quote/delete/add), decisions, meta rail, Save & Close / Back to Transcript.
-- [ ] Exceptions: `EXC-API-POST` (Retry / Save-without-analysis), `EXC-EMPTY` (skip analysis).
-- [ ] `status` transitions analyzing → reviewing → completed.
+> **Status:** ✅ **Complete** (branch `feat/m4-post-analysis`) — End routes to a real Post screen that runs Sonnet structured extraction, merges live/saved commitments, and lets the user edit before Save & Close. **96 unit tests**, clippy + svelte-check clean. The on-device run (a real call → review → save) is the remaining manual check. Plan: [m4-plan.md](m4-plan.md).
+
+- [x] `ai/analyze.rs`: full transcript + context + live annotations → Sonnet (structured output, D17) → `{summary,actions,decisions,key_topics}`; cost accounted before the parse (D-cost).
+- [x] Merge/dedupe Sonnet actions with live commitments + saved actions (D19 — user-saved always kept).
+- [x] IPC: `run_post_analysis` (async, `analysis-progress` events), `save_analysis`, `update_action_status`.
+- [x] Post screen (two-pane): editable summary `[Regenerate]`, action rows (check/owner/due/quote/delete/add), decisions, meta rail, Save & Close / Back to Transcript.
+- [x] Exceptions: `EXC-API-POST` (Retry / Save-without-analysis), `EXC-EMPTY` (skip analysis).
+- [x] `status` transitions ending → analyzing → reviewing → completed (D18; crash recovery keeps the draft, D20).
 
 **Acceptance:**
 - Ending a real session yields an editable summary + extracted actions with owners/dates/quotes within ~30 s.

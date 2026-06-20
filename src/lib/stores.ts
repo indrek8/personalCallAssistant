@@ -8,6 +8,7 @@ import type {
   AiChatDoneEvent,
   AiChatTokenEvent,
   AiFindingEvent,
+  AnalysisProgressEvent,
   AppErrorEvent,
   AudioDevice,
   CaptureStateEvent,
@@ -87,6 +88,14 @@ export const liveSessionId = writable<string | null>(null);
 /** In-flight model download progress (null = none). */
 export const modelDownload = writable<ModelDownloadProgress | null>(null);
 
+// ---- Post-analysis stores (M4) ---------------------------------------------
+
+/** The session being reviewed in the Post screen (captured on End, before nav). */
+export const postSessionId = writable<string | null>(null);
+
+/** Post-analysis lifecycle, drives the Post screen's spinner/error/review states. */
+export const analysisPhase = writable<"idle" | "analyzing" | "reviewing" | "error">("idle");
+
 /** Reset the live stores for a new capture session. */
 export function startLive(sessionId: string, initialToggles: Toggles): void {
   liveSessionId.set(sessionId);
@@ -147,6 +156,9 @@ export async function setupEventListeners(): Promise<void> {
       const last = turns[turns.length - 1];
       return [...turns.slice(0, -1), { ...last, answer: e.payload.answer || last.answer, streaming: false }];
     });
+  });
+  await listen<AnalysisProgressEvent>("analysis-progress", (e) => {
+    analysisPhase.set(e.payload.phase === "reviewing" ? "reviewing" : "analyzing");
   });
   await listen<ModelDownloadProgress>("model-download-progress", (e) => {
     modelDownload.set(e.payload.pct >= 100 ? null : e.payload);

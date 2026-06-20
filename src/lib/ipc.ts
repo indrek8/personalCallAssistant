@@ -16,6 +16,8 @@ import type {
   ApiKeyStatus,
   Toggles,
   Finding,
+  Analysis,
+  ActionStatus,
 } from "./types";
 
 /** Re-exported so stores can subscribe to backend events in one place. */
@@ -125,4 +127,29 @@ export function askAi(question: string): Promise<{ answer: string; cost: number 
 /** save_action({ finding }) -> (). Persists a saved commitment to the session. */
 export function saveAction(finding: Finding): Promise<void> {
   return invoke<void>("save_action", { finding });
+}
+
+// ---- M4 post-analysis ------------------------------------------------------
+
+/**
+ * run_post_analysis({ session_id }) -> (). Runs Sonnet extraction, writes the
+ * draft analysis.json (status → reviewing), drives `analysis-progress`. Re-fetch
+ * the draft via getSession when it resolves (D18).
+ */
+export function runPostAnalysis(sessionId: string): Promise<void> {
+  return invoke<void>("run_post_analysis", { sessionId });
+}
+
+/** save_analysis({ session_id, analysis }) -> (). Persists the reviewed analysis; completes. */
+export function saveAnalysis(sessionId: string, analysis: Analysis): Promise<void> {
+  return invoke<void>("save_analysis", { sessionId, analysis });
+}
+
+/** update_action_status({ session_id, action_id, status }) -> (). Patches one action (M5 UI). */
+export function updateActionStatus(
+  sessionId: string,
+  actionId: string,
+  status: ActionStatus,
+): Promise<void> {
+  return invoke<void>("update_action_status", { sessionId, actionId, status });
 }
