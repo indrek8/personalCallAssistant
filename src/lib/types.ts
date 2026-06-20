@@ -138,6 +138,18 @@ export interface AppErrorEvent {
   recoverable: boolean;
 }
 
+/** Returned by test_api_key — a 1-token validation ping result. */
+export interface TestKeyResult {
+  ok: boolean;
+  model?: string | null;
+  error?: string | null;
+}
+
+/** Returned by get_api_key_status — whether a key is configured (key not exposed). */
+export interface ApiKeyStatus {
+  present: boolean;
+}
+
 /** The four live-AI feature toggles. */
 export interface Toggles {
   f: boolean;

@@ -12,6 +12,8 @@ import type {
   SessionFull,
   SessionMeta,
   Settings,
+  TestKeyResult,
+  ApiKeyStatus,
 } from "./types";
 
 /** Re-exported so stores can subscribe to backend events in one place. */
@@ -89,4 +91,21 @@ export function listModels(): Promise<ModelStatus[]> {
 /** download_model({ name }) -> (). Progress via `model-download-progress`. */
 export function downloadModel(name: string): Promise<void> {
   return invoke<void>("download_model", { name });
+}
+
+// ---- M3 live-AI: API key management (PR1) ----------------------------------
+
+/** test_api_key({ key }) -> { ok, model?, error? }. 1-token Haiku ping. */
+export function testApiKey(key: string): Promise<TestKeyResult> {
+  return invoke<TestKeyResult>("test_api_key", { key });
+}
+
+/** save_api_key({ key }) -> (). Persists to the macOS Keychain. */
+export function saveApiKey(key: string): Promise<void> {
+  return invoke<void>("save_api_key", { key });
+}
+
+/** get_api_key_status() -> { present }. Never returns the key itself. */
+export function getApiKeyStatus(): Promise<ApiKeyStatus> {
+  return invoke<ApiKeyStatus>("get_api_key_status");
 }

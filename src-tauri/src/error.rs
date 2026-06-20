@@ -40,6 +40,14 @@ pub enum AppError {
     /// Whisper model missing, download failed, or failed verification.
     #[error("model error: {0}")]
     Model(String),
+
+    /// Missing or invalid Claude API key (EXC-KEY).
+    #[error("api key error: {0}")]
+    Auth(String),
+
+    /// Claude API call failed — network, timeout, or non-2xx (EXC-API).
+    #[error("api error: {0}")]
+    Api(String),
 }
 
 impl AppError {
@@ -53,6 +61,8 @@ impl AppError {
             AppError::NotFound(_) => "EXC-NOTFOUND",
             AppError::Stt(_) => "EXC-WHISPER",
             AppError::Model(_) => "EXC-MODEL",
+            AppError::Auth(_) => "EXC-KEY",
+            AppError::Api(_) => "EXC-API",
         }
     }
 }
@@ -96,5 +106,7 @@ mod tests {
         assert_eq!(AppError::Audio("x".into()).code(), "EXC-NODEV");
         assert_eq!(AppError::NotFound("x".into()).code(), "EXC-NOTFOUND");
         assert_eq!(AppError::Storage("x".into()).code(), "EXC-DISK");
+        assert_eq!(AppError::Auth("x".into()).code(), "EXC-KEY");
+        assert_eq!(AppError::Api("x".into()).code(), "EXC-API");
     }
 }
