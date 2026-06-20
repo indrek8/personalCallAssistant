@@ -10,10 +10,12 @@
 
 #![allow(dead_code)] // Built out across M3 PRs; some helpers land before their callers.
 
+pub mod chat;
 pub mod live;
 pub mod prompts;
 
 use serde::Deserialize;
+use std::io::{BufRead, BufReader};
 use std::time::Duration;
 
 use crate::error::{AppError, AppResult};
@@ -213,6 +215,116 @@ impl ClaudeClient {
             resp.model
         })
     }
+
+    /// SSE-stream a Messages request, calling `on_token` for each text delta.
+    /// Returns the full concatenated text + final usage. Used by Ask-AI chat
+    /// (PR3, D13). Not retried — a chat turn is interactive, so a failure surfaces
+    /// immediately rather than stalling behind backoff.
+    pub fn stream_text(
+        &self,
+        body: &serde_json::Value,
+        mut on_token: impl FnMut(&str),
+    ) -> AppResult<(String, Usage)> {
+        let resp = self
+            .http
+            .post(API_URL)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", API_VERSION)
+            .header("content-type", "application/json")
+            .json(body)
+            .send()
+            .map_err(|e| AppError::Api(format!("request failed: {e}")))?;
+        let status = resp.status();
+        if !status.is_success() {
+            if status.as_u16() == 401 {
+                return Err(AppError::Auth("invalid Claude API key (HTTP 401)".into()));
+            }
+            let body = resp.text().unwrap_or_default();
+            return Err(AppError::Api(format!(
+                "Claude API HTTP {}: {}",
+                status.as_u16(),
+                truncate(&body, 200)
+            )));
+        }
+
+        let reader = BufReader::new(resp);
+        let mut text = String::new();
+        let mut usage = Usage::default();
+        for line in reader.lines() {
+            let line = line.map_err(|e| AppError::Api(format!("stream read: {e}")))?;
+            let Some(data) = line.strip_prefix("data:") else {
+                continue;
+            };
+            let data = data.trim();
+            if data.is_empty() || data == "[DONE]" {
+                continue;
+            }
+            let Ok(ev) = serde_json::from_str::<StreamEvent>(data) else {
+                continue; // ignore frames we don't model (ping, content_block_start, …)
+            };
+            match ev.kind.as_str() {
+                "message_start" => {
+                    if let Some(m) = ev.message {
+                        usage.input_tokens = m.usage.input_tokens;
+                        usage.cache_read_input_tokens = m.usage.cache_read_input_tokens;
+                        usage.cache_creation_input_tokens = m.usage.cache_creation_input_tokens;
+                    }
+                }
+                "content_block_delta" => {
+                    if let Some(d) = ev.delta {
+                        if d.kind.as_deref() == Some("text_delta") {
+                            if let Some(t) = d.text {
+                                on_token(&t);
+                                text.push_str(&t);
+                            }
+                        }
+                    }
+                }
+                "message_delta" => {
+                    if let Some(u) = ev.usage {
+                        usage.output_tokens = u.output_tokens;
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok((text, usage))
+    }
+}
+
+/// SSE frames we care about from a streamed Messages response (PR3). Unmodeled
+/// frames (`ping`, `content_block_start`, `message_stop`) deserialize and fall
+/// through the match harmlessly.
+#[derive(Deserialize)]
+struct StreamEvent {
+    #[serde(rename = "type", default)]
+    kind: String,
+    #[serde(default)]
+    message: Option<StreamMessage>,
+    #[serde(default)]
+    delta: Option<StreamDelta>,
+    #[serde(default)]
+    usage: Option<DeltaUsage>,
+}
+
+#[derive(Deserialize)]
+struct StreamMessage {
+    #[serde(default)]
+    usage: Usage,
+}
+
+#[derive(Deserialize)]
+struct StreamDelta {
+    #[serde(rename = "type", default)]
+    kind: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct DeltaUsage {
+    #[serde(default)]
+    output_tokens: u64,
 }
 
 /// Char-boundary-safe truncation for embedding an error body in a message.

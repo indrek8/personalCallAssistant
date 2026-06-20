@@ -5,10 +5,13 @@
 
 import { writable, derived, get } from "svelte/store";
 import type {
+  AiChatDoneEvent,
+  AiChatTokenEvent,
   AiFindingEvent,
   AppErrorEvent,
   AudioDevice,
   CaptureStateEvent,
+  ChatTurn,
   CostUpdateEvent,
   Finding,
   ModelDownloadProgress,
@@ -75,6 +78,9 @@ export const findings = writable<Finding[]>([]);
 /** Active live-AI feature toggles for the in-progress session. */
 export const toggles = writable<Toggles>({ f: false, c: false, s: false, q: false });
 
+/** Ask-AI exchanges for the in-progress session (fed by `ai-chat-*` events). */
+export const chat = writable<ChatTurn[]>([]);
+
 /** The id of the session currently capturing (filters transcript events). */
 export const liveSessionId = writable<string | null>(null);
 
@@ -86,6 +92,7 @@ export function startLive(sessionId: string, initialToggles: Toggles): void {
   liveSessionId.set(sessionId);
   transcript.set([]);
   findings.set([]);
+  chat.set([]);
   toggles.set(initialToggles);
   live.set({ status: "recording", elapsedMs: 0, lagging: false, cost: 0 });
 }
@@ -122,6 +129,21 @@ export async function setupEventListeners(): Promise<void> {
     if (get(liveSessionId) === e.payload.session_id) {
       live.update((l) => ({ ...l, cost: e.payload.total }));
     }
+  });
+  // Ask-AI streams to the most-recent (streaming) chat turn — one Q&A at a time.
+  await listen<AiChatTokenEvent>("ai-chat-token", (e) => {
+    chat.update((turns) => {
+      if (turns.length === 0 || !turns[turns.length - 1].streaming) return turns;
+      const last = turns[turns.length - 1];
+      return [...turns.slice(0, -1), { ...last, answer: last.answer + e.payload.token }];
+    });
+  });
+  await listen<AiChatDoneEvent>("ai-chat-done", (e) => {
+    chat.update((turns) => {
+      if (turns.length === 0) return turns;
+      const last = turns[turns.length - 1];
+      return [...turns.slice(0, -1), { ...last, answer: e.payload.answer || last.answer, streaming: false }];
+    });
   });
   await listen<ModelDownloadProgress>("model-download-progress", (e) => {
     modelDownload.set(e.payload.pct >= 100 ? null : e.payload);

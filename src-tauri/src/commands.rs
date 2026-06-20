@@ -326,10 +326,39 @@ pub fn set_toggles(
     manager::set_toggles(&state, Toggles { f, c, s, q })
 }
 
-/// `ask_ai({ question })` → `{ answer, cost }` (M3).
+/// `ask_ai({ question })` → `{ answer, cost }`. Streams a Sonnet answer over the
+/// live session's transcript + prep notes; emits `ai-chat-token` / `ai-chat-done`
+/// during, and folds the cost into the session meter. Runs on a blocking thread.
 #[tauri::command]
-pub fn ask_ai(_question: String) -> AppResult<serde_json::Value> {
-    Err(not_impl("ask_ai"))
+pub async fn ask_ai(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    question: String,
+) -> AppResult<serde_json::Value> {
+    let (session_id, cost_arc) = manager::live_handle(&state)
+        .ok_or_else(|| AppError::Audio("no live session for Ask-AI".into()))?;
+
+    let app_task = app.clone();
+    let sid = session_id.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        crate::ai::chat::ask(&app_task, &sid, &question)
+    })
+    .await
+    .map_err(|e| AppError::Api(format!("ask task failed: {e}")))?;
+    let (answer, cost) = result?;
+
+    // Fold the chat cost into the running total + push the cost meter.
+    let total = {
+        let mut c = cost_arc.lock().unwrap();
+        *c += cost;
+        *c
+    };
+    events::emit(
+        &app,
+        events::COST_UPDATE,
+        json!({ "session_id": session_id, "total": total, "last": cost }),
+    );
+    Ok(json!({ "answer": answer, "cost": cost }))
 }
 
 /// `run_post_analysis({ session_id })` → `()` (M4).

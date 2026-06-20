@@ -12,8 +12,9 @@
     refreshSessions,
     findings,
     toggles,
+    chat,
   } from "$lib/stores";
-  import { isTauri, pauseCapture, resumeCapture, endSession, setToggles } from "$lib/ipc";
+  import { isTauri, pauseCapture, resumeCapture, endSession, setToggles, askAi } from "$lib/ipc";
   import type { StreamTag, Toggles, Finding } from "$lib/types";
 
   // M3: transcript + timer (M2) plus the live AI panel — findings feed, F/C/S/Q
@@ -109,6 +110,36 @@
   let savedIds = $state<string[]>([]);
   function saveAction(f: Finding) {
     if (!savedIds.includes(f.id)) savedIds = [...savedIds, f.id];
+  }
+
+  // Ask AI (streamed Sonnet). One turn at a time; the input is disabled while asking.
+  let askText = $state("");
+  let asking = $state(false);
+  let askSeq = 0;
+  const lastChat = $derived($chat.length ? $chat[$chat.length - 1] : null);
+
+  async function submitAsk() {
+    const q = askText.trim();
+    if (!q || asking) return;
+    chat.update((t) => [...t, { id: `q${askSeq++}`, question: q, answer: "", streaming: true }]);
+    askText = "";
+    asking = true;
+    try {
+      if (isTauri()) {
+        await askAi(q);
+      } else {
+        chat.update((t) =>
+          t.map((c, i) => (i === t.length - 1 ? { ...c, answer: "(Ask AI runs in the app)", streaming: false } : c)),
+        );
+      }
+    } catch (e) {
+      banner.set(`Ask AI failed: ${String(e)}`);
+      chat.update((t) =>
+        t.map((c, i) => (i === t.length - 1 ? { ...c, answer: c.answer || "(failed)", streaming: false } : c)),
+      );
+    } finally {
+      asking = false;
+    }
   }
 
   async function togglePause() {
@@ -223,9 +254,23 @@
           </div>
         {/if}
       </div>
+      {#if lastChat}
+        <div class="chat-latest">
+          <div class="cq">{lastChat.question}</div>
+          <div class="ca">{lastChat.answer}{#if lastChat.streaming}<span class="cursor">▋</span>{/if}</div>
+        </div>
+      {/if}
       <div class="ask-bar">
         <div class="ic"><svg class="icon" viewBox="0 0 24 24"><path d="M12 2a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg></div>
-        <input placeholder="Ask AI — available in M3" disabled />
+        <input
+          placeholder={asking ? "Thinking…" : "Ask AI about the call so far…"}
+          bind:value={askText}
+          disabled={asking}
+          onkeydown={(e) => { if (e.key === "Enter") submitAsk(); }}
+        />
+        <button class="ask-send" disabled={asking || !askText.trim()} onclick={submitAsk} aria-label="Send">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+        </button>
       </div>
     </div>
   </div>
@@ -291,7 +336,16 @@
   .f-save{margin-left:auto;font-family:var(--f-mono);font-size:10.5px;color:var(--gold);background:var(--gold-soft);border:1px solid var(--gold-line);border-radius:6px;padding:4px 10px;cursor:pointer;transition:.15s}
   .f-save:disabled{color:var(--suggest,#8ac479);background:transparent;border-color:var(--line-soft);cursor:default}
   .ask-bar{flex:none;padding:12px 16px;border-top:1px solid var(--line-soft);display:flex;gap:10px;align-items:center;background:var(--bg-1)}
-  .ask-bar .ic{width:30px;height:30px;border-radius:8px;background:var(--gold-soft);border:1px solid var(--gold-line);display:flex;align-items:center;justify-content:center;color:var(--gold);flex:none;opacity:.5}
-  .ask-bar input{flex:1;background:var(--bg-2);border:1px solid var(--line);border-radius:9px;padding:10px 14px;color:var(--ink);font-family:var(--f-ui);font-size:13px;outline:none;opacity:.5}
+  .ask-bar .ic{width:30px;height:30px;border-radius:8px;background:var(--gold-soft);border:1px solid var(--gold-line);display:flex;align-items:center;justify-content:center;color:var(--gold);flex:none}
+  .ask-bar input{flex:1;background:var(--bg-2);border:1px solid var(--line);border-radius:9px;padding:10px 14px;color:var(--ink);font-family:var(--f-ui);font-size:13px;outline:none;transition:.16s}
+  .ask-bar input:focus{border-color:var(--gold-line);box-shadow:0 0 0 3px var(--gold-soft)}
+  .ask-bar input:disabled{opacity:.6}
   .ask-bar input::placeholder{color:var(--ink-4)}
+  .ask-send{width:34px;height:34px;flex:none;border-radius:9px;background:var(--gold-soft);border:1px solid var(--gold-line);color:var(--gold);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.15s}
+  .ask-send:hover:not(:disabled){background:var(--gold);color:#27200C}
+  .ask-send:disabled{opacity:.4;cursor:default}
+  .chat-latest{flex:none;max-height:96px;overflow-y:auto;margin:0 16px;padding:10px 12px;border:1px solid var(--gold-line);background:var(--gold-soft);border-radius:10px}
+  .chat-latest .cq{font-size:12px;color:var(--ink-3);font-style:italic;margin-bottom:6px}
+  .chat-latest .ca{font-size:13px;line-height:1.55;color:var(--ink);white-space:pre-wrap}
+  .chat-latest .cursor{color:var(--gold);animation:pulse 1s infinite}
 </style>

@@ -187,6 +187,25 @@ export interface CostUpdateEvent {
   last: number;
 }
 
+/** Payload of the `ai-chat-token` event (one streamed delta). */
+export interface AiChatTokenEvent {
+  token: string;
+}
+
+/** Payload of the `ai-chat-done` event. */
+export interface AiChatDoneEvent {
+  answer: string;
+  cost?: number;
+}
+
+/** One user→AI exchange in the live Ask-AI panel. */
+export interface ChatTurn {
+  id: string;
+  question: string;
+  answer: string;
+  streaming: boolean;
+}
+
 /** `settings.json` (the API key is never stored here). */
 export interface Settings {
   capture_device_id?: string | null;

@@ -115,3 +115,8 @@ export function getApiKeyStatus(): Promise<ApiKeyStatus> {
 export function setToggles(t: Toggles): Promise<void> {
   return invoke<void>("set_toggles", { f: t.f, c: t.c, s: t.s, q: t.q });
 }
+
+/** ask_ai({ question }) -> { answer, cost }. Streams ai-chat-token/done during. */
+export function askAi(question: string): Promise<{ answer: string; cost: number }> {
+  return invoke<{ answer: string; cost: number }>("ask_ai", { question });
+}
