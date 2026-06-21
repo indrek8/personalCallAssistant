@@ -28,6 +28,9 @@ export interface LabelRef {
   color?: string | null;
 }
 
+/** A label in the global registry (`labels.json`) — same shape as a `LabelRef`. */
+export type Label = LabelRef;
+
 /** Input to create_session — the cheap "New Session" form. */
 export interface SessionDraft {
   name?: string | null;
@@ -50,6 +53,9 @@ export interface SessionMeta {
   context_notes?: string | null;
   budget_cap?: number | null;
   total_api_cost: number;
+  /** True only for a synthesized placeholder when a session's metadata won't
+   * parse (EXC-CORRUPT) — rendered as an "⚠ Unreadable" row (M5). */
+  unreadable?: boolean;
 }
 
 /** Returned by create_session. */
@@ -264,6 +270,23 @@ export interface Settings {
   budget_default: number;
   storage_path?: string | null;
   first_run: boolean;
+}
+
+/** How the Post screen was entered (M5):
+ *  - `fresh`    — a just-ended session: run analysis.
+ *  - `reanalyze`— a stored session re-analyzed from the dashboard: re-run + overwrite.
+ *  - `resume`   — a recovered `reviewing` session: show its existing draft, no re-bill. */
+export type PostMode = "fresh" | "reanalyze" | "resume";
+
+/** A transient notification (M5). `sticky` ones stay until dismissed; the rest
+ * auto-dismiss. An optional `action` renders an inline button (e.g. "Resume review"). */
+export interface Toast {
+  id: string;
+  kind: "error" | "info" | "success";
+  message: string;
+  code?: string;
+  sticky: boolean;
+  action?: { label: string; run: () => void };
 }
 
 /** Top-level app mode (technical-design.md §8, flows.md §1). */

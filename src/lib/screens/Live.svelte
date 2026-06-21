@@ -6,6 +6,7 @@
     live,
     liveSessionId,
     postSessionId,
+    postMode,
     sessions,
     settings,
     devices,
@@ -17,11 +18,13 @@
   } from "$lib/stores";
   import { isTauri, pauseCapture, resumeCapture, endSession, setToggles, askAi, saveAction as saveActionCmd } from "$lib/ipc";
   import type { StreamTag, Toggles, Finding } from "$lib/types";
+  import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
 
   // M3: transcript + timer (M2) plus the live AI panel — findings feed, F/C/S/Q
   // toggles, and the cost meter, fed by `ai-finding` / `cost-update` events.
 
   let ending = $state(false);
+  let confirmEnd = $state(false);
   let trArea: HTMLDivElement;
 
   // Local 1 Hz timer, corrected by `capture-state` events (which only fire on
@@ -160,8 +163,8 @@
     }
   }
 
-  async function end() {
-    if (typeof window !== "undefined" && !window.confirm("End this session?")) return;
+  async function doEnd() {
+    confirmEnd = false;
     ending = true;
     try {
       const sid = $liveSessionId;
@@ -173,6 +176,7 @@
       // Hand off to post-analysis (M4): the Post screen runs run_post_analysis
       // over this session and lets the user review before saving.
       if (sid) {
+        postMode.set("fresh");
         postSessionId.set(sid);
         navigate("post");
       } else {
@@ -204,7 +208,7 @@
           <svg class="icon" viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z" /></svg>
         {/if}
       </button>
-      <button class="btn btn-rec" disabled={ending} onclick={end}>
+      <button class="btn btn-rec" disabled={ending} onclick={() => (confirmEnd = true)}>
         <svg class="icon" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2" /></svg>{ending ? "Ending…" : "End"}
       </button>
     </div>
@@ -290,6 +294,16 @@
       </div>
     </div>
   </div>
+
+  {#if confirmEnd}
+    <ConfirmDialog
+      title="End this session?"
+      message="Recording and transcription stop, and the session moves to post-analysis."
+      confirmLabel="End session"
+      onConfirm={doEnd}
+      onCancel={() => (confirmEnd = false)}
+    />
+  {/if}
 </section>
 
 <style>

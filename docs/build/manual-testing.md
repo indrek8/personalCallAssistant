@@ -93,7 +93,7 @@ npm run tauri dev           # the real app (Rust backend + WebView)
 
 **Optional automated pre-checks** (fast confidence before manual work):
 ```sh
-cd src-tauri && cargo test      # 96 unit tests (VAD, resampler, recovery, model mgr, AI client/retry/SSE, post-analysis extract/merge…)
+cd src-tauri && cargo test      # 104 unit tests (VAD, resampler, recovery, model mgr, AI client/retry/SSE, post-analysis, labels/delete…)
 cd src-tauri && cargo clippy    # should be clean
 npm run check                   # svelte-check (types)
 ```
@@ -337,3 +337,65 @@ per-session file: `analysis.json`.
 - ✅ **Pass when:** a near-silent session skips the model and saves cleanly.
 
 **EXC mapping update:** EXC-API-POST + EXC-EMPTY are now implemented (M4); see T13/T16/T17.
+
+---
+
+## M5 — Manage, Settings & Polish is now real (branch `feat/m5-manage-polish`)
+
+The §0 stubbed rows for the **Dashboard detail pane**, **labels**, **Re-analyze**, and
+**Reveal in Finder** are now live. The detail pane shows the **real** session (no more CBUAE
+mock). New global file: `labels.json`.
+
+### T18 — Real detail pane + inline action status
+- [ ] Select a completed session → the right pane shows its **real** summary, actions (with
+  owner/deadline/quote), decisions, and a collapsible transcript — loaded via `get_session`.
+  Change an action's **status** via the inline dropdown.
+- **Expected:** the status persists (re-fetched, no spinner flash) and survives quit + relaunch
+  (`analysis.json` updated, `completed_at` set when → Done).
+- ✅ **Pass when:** the pane reflects the actual session and inline status edits stick.
+
+### T19 — Labels (full manager + picker + filter)
+- [ ] **Manage labels** (Dashboard list head or Settings → Storage) → create "Acme" with a color,
+  rename it, recolor it, see its **usage count**, delete one. In **New Session**, pick existing
+  labels and **create-on-type** a new one. On the dashboard, click a **filter chip**.
+- **Expected:** labels persist to `labels.json`; rename/recolor reflects on existing sessions;
+  a deleted label still renders on old sessions (snapshot); the filter narrows the list by label.
+- ✅ **Pass when:** label CRUD round-trips and filtering works.
+
+### T20 — Re-analyze a stored session
+- [ ] Open a completed session → **Re-analyze** → confirm.
+- **Expected:** routes to Post, re-runs Sonnet, lets you edit → **Save & Close** overwrites the
+  analysis. A forced failure (kill Wi-Fi first) leaves the session **`completed` with the old
+  analysis intact** (D21).
+- ✅ **Pass when:** Re-analyze overwrites on success and never corrupts a completed session on failure.
+
+### T21 — Delete / Discard (confirm dialogs)
+- [ ] Dashboard → select a session → **Delete** (confirm). In Post (after End or Re-analyze) →
+  **Discard** (confirm). End a live session → the **End** confirm is the styled dialog (not the OS prompt).
+- **Expected:** Delete/Discard remove the session folder from disk and the list; confirms are the
+  in-app `ConfirmDialog`.
+- ✅ **Pass when:** destructive actions require confirmation and fully remove the session.
+
+### T22 — Recover-into-review (`EXC-CRASH`, D23)
+- [ ] Reach the Post **review** state (End a real session, wait for the draft), then **Force Quit**.
+  Relaunch.
+- **Expected:** a sticky **toast** "Recovered a session mid-review" with a **Resume review** action
+  → reopens the draft in Post **without re-billing** (status stayed `reviewing`). (A crash during
+  *recording* still recovers as `completed` — see T7.)
+- ✅ **Pass when:** a half-reviewed session resumes its draft instead of silently completing.
+
+### T23 — Unreadable session row + Reveal in Finder (`EXC-CORRUPT`)
+- [ ] Hand-edit a session's `metadata.json` to invalid JSON. Relaunch.
+- **Expected:** that session shows as a **⚠ Unreadable session** row (folder name as id); selecting
+  it offers **Reveal in Finder** + **Delete**; the rest of the list still works.
+- ✅ **Pass when:** a corrupt session is surfaced (not skipped) and never crashes the list.
+
+### T24 — Reveal in Finder + error toasts
+- [ ] Settings → Storage → **Reveal in Finder** opens the storage dir. Trigger any handled error
+  (e.g. a bad API key during live AI).
+- **Expected:** Finder opens the `CallAssistant` folder; handled `app-error`s appear as **toasts**
+  (sticky when non-recoverable) instead of only a banner.
+- ✅ **Pass when:** Reveal opens the folder and errors surface as dismissible toasts.
+
+**EXC mapping update:** EXC-CORRUPT is now a visible "⚠ Unreadable" row (M5); recover-into-review
+(D23) routes a crashed `reviewing` session back to Post.

@@ -179,6 +179,11 @@ LIVE is a continuous pipeline. From the user's view it's "talk, watch transcript
 
 ## 7. Flow E — Review, Manage & Re-analyze
 
+> ✅ **Implemented in M5.** The detail pane fetches `get_session` (real summary/actions/transcript);
+> inline status edits call `update_action_status`; **Re-analyze** (confirm) reuses
+> `run_post_analysis` via the Post screen (`postMode="reanalyze"`, prior-status-safe — D21);
+> **Delete** removes the session; labels have a full manager (`labels.json`). See [m5-plan.md](m5-plan.md).
+
 From DASHBOARD (mail-inbox split):
 - **Select session** → right pane: summary, actions (with live status), transcript. Loaded from disk.
 - **Update action status** inline (pending → in progress → done → won't do → postponed) → patched into `analysis.json`.

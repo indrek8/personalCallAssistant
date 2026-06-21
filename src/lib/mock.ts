@@ -1,45 +1,9 @@
-// Mock data for the parts of M1 the backend doesn't serve yet (session detail
-// body, live transcript/AI feed, post-analysis). The dashboard *list* and the
-// device dropdowns are real; everything here is illustrative content that
-// matches design/prototype.html.
+// Browser-preview sample data for the parts that need a backend (live
+// transcript/AI feed, sample sessions). The dashboard *list* and device
+// dropdowns are real; everything here is illustrative content matching
+// design/prototype.html. Real formatters now live in `$lib/format.ts`.
 
 import type { SessionMeta } from "./types";
-
-/** Map a label name to one of the prototype's colored chip classes. */
-export function labelClass(name: string): string {
-  const n = name.toLowerCase();
-  if (n.includes("acme dev") || n.includes("dev")) return "lbl-dev";
-  if (n.includes("acme")) return "lbl-acme";
-  if (n.includes("globex")) return "lbl-globex";
-  return "lbl-int";
-}
-
-/** Short "Mar 28" style date from an ISO-8601 string (falls back to raw). */
-export function shortDate(iso: string): string {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-/** Long "Mar 28, 2026" style date. */
-export function longDate(iso: string): string {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
-/** Duration in ms -> "47m" / "1h 05m". */
-export function fmtDuration(ms: number): string {
-  const totalMin = Math.round(ms / 60000);
-  if (totalMin < 60) return `${totalMin}m`;
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return `${h}h ${String(m).padStart(2, "0")}m`;
-}
 
 /** Sample sessions so the dashboard reads well in a plain-browser preview. */
 export const SAMPLE_SESSIONS: SessionMeta[] = [

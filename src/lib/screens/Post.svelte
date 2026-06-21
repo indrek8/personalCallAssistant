@@ -5,11 +5,14 @@
     navigate,
     refreshSessions,
     postSessionId,
+    postMode,
     selectedSessionId,
     analysisPhase,
     banner,
+    pushToast,
   } from "$lib/stores";
-  import { isTauri, getSession, runPostAnalysis, saveAnalysis } from "$lib/ipc";
+  import { isTauri, getSession, runPostAnalysis, saveAnalysis, deleteSession } from "$lib/ipc";
+  import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import type {
     Analysis,
     ActionType,
@@ -44,6 +47,7 @@
   let errorMsg = $state("");
   let saving = $state(false);
   let showTranscript = $state(false);
+  let confirmDiscard = $state(false);
 
   let sessionId = "";
   let meta = $state<SessionMeta | null>(null);
@@ -67,8 +71,34 @@
       loadMock();
       return;
     }
-    void runAnalysis(true);
+    // D22: `resume` shows the existing draft without re-billing; `fresh`/`reanalyze`
+    // run Sonnet (re-analyze overwrites the saved analysis).
+    if (get(postMode) === "resume") void resumeReview();
+    else void runAnalysis(true);
   });
+
+  /** Recover-into-review: load the persisted draft and show it; if there's no
+   *  analysis yet, fall back to running one. No Sonnet call when a draft exists. */
+  async function resumeReview() {
+    phase = "analyzing";
+    analysisPhase.set("analyzing");
+    try {
+      const full = await getSession(sessionId);
+      meta = full.meta;
+      transcriptEntries = full.transcript;
+      if (full.analysis) {
+        applyDraft(full.analysis);
+        analysisPhase.set("reviewing");
+        phase = "review";
+      } else {
+        await runAnalysis(false);
+      }
+    } catch (e) {
+      errorMsg = String(e);
+      analysisPhase.set("error");
+      phase = "error";
+    }
+  }
 
   async function runAnalysis(loadMeta: boolean) {
     phase = "analyzing";
@@ -145,6 +175,7 @@
       if (isTauri()) await saveAnalysis(sessionId, analysis);
       await refreshSessions();
       postSessionId.set(null);
+      postMode.set("fresh");
       analysisPhase.set("idle");
       navigate("dashboard");
     } catch (e) {
@@ -156,6 +187,23 @@
   const saveAndClose = () => persist(buildAnalysis(true));
   const saveWithoutAnalysis = () =>
     persist({ summary: "", actions: [], decisions: [], key_topics: [], generated_at: new Date().toISOString() });
+
+  /** Discard = permanently delete the whole session (flows §1 POST_PROCESS Discard). */
+  async function doDiscard() {
+    confirmDiscard = false;
+    saving = true;
+    try {
+      if (isTauri()) await deleteSession(sessionId);
+      await refreshSessions();
+      postSessionId.set(null);
+      postMode.set("fresh");
+      analysisPhase.set("idle");
+      navigate("dashboard");
+    } catch (e) {
+      pushToast(`Could not discard session: ${String(e)}`, { kind: "error" });
+      saving = false;
+    }
+  }
 
   function addAction() {
     rows = [
@@ -290,6 +338,7 @@
         <button class="btn btn-gold" onclick={() => runAnalysis(false)}>Retry analysis</button>
         <button class="btn btn-ghost" disabled={saving} onclick={saveWithoutAnalysis}>Save without analysis</button>
         <button class="btn btn-ghost" onclick={() => navigate("dashboard")}>Back to dashboard</button>
+        <button class="btn btn-ghost discard-link" disabled={saving} onclick={() => (confirmDiscard = true)}>Discard session</button>
       </div>
       <div class="c-note">Your transcript and recording are safe either way.</div>
     </div>
@@ -367,6 +416,7 @@
             {saving ? "Saving…" : "Save & Close"}
           </button>
           <button class="btn btn-ghost" style="justify-content:center" onclick={() => (showTranscript = true)}>Back to Transcript</button>
+          <button class="btn btn-ghost discard-link" style="justify-content:center" disabled={saving} onclick={() => (confirmDiscard = true)}>Discard session</button>
         </div>
       </div>
     </div>
@@ -392,6 +442,17 @@
       </div>
     </div>
   {/if}
+
+  {#if confirmDiscard}
+    <ConfirmDialog
+      title="Discard this session?"
+      message="Permanently deletes the recording, transcript, and analysis. This cannot be undone."
+      confirmLabel="Discard"
+      destructive
+      onConfirm={doDiscard}
+      onCancel={() => (confirmDiscard = false)}
+    />
+  {/if}
 </section>
 
 <style>
@@ -403,6 +464,8 @@
   .c-note{font-size:13px;color:var(--ink-4);max-width:420px;line-height:1.6}
   .c-err{font-family:var(--f-mono);font-size:12px;color:var(--rec);max-width:560px;line-height:1.6;background:var(--bg-2);border:1px solid var(--line-soft);border-radius:var(--r-m);padding:12px 14px;word-break:break-word}
   .err-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:6px}
+  .discard-link{color:var(--ink-4)}
+  .discard-link:hover{color:var(--late);border-color:rgba(255,107,92,.3)}
 
   .duo{flex:1;display:flex;overflow:hidden}
   .post-main{flex:1;overflow-y:auto;padding:34px 44px 50px}

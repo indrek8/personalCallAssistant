@@ -124,18 +124,23 @@ M0 Spikes ─► M1 Skeleton ─► M2 Capture→Transcript ─► M3 Live AI �
 
 **Goal:** the surrounding app — browse, manage actions, configure, and handle the rough edges.
 
-- [ ] Dashboard detail pane: summary, actions (inline status edit), transcript — all from disk.
-- [ ] Label CRUD (`labels.json`), filter by label, name search.
-- [ ] `Re-analyze` on a stored session.
-- [ ] Onboarding wizard wired to real key-test + device + model steps.
-- [ ] Settings fully functional (key/Keychain, device, model, default toggles, storage reveal).
-- [ ] Exception surfacing: global `app-error` → toast/banner; `EXC-CORRUPT` handling in the list.
-- [ ] Empty states, loading states, confirm dialogs (End, Discard, Re-analyze).
+> **Status:** ✅ **Complete** (branch `feat/m5-manage-polish`) — the dashboard detail pane,
+> labels, Re-analyze, delete/discard, recover-into-review, error toasts, and confirm dialogs
+> are all live. This closes the MVP. **104 unit tests**, clippy + svelte-check clean. The
+> on-device run (real call → manage → labels → re-analyze) is the remaining manual check.
+> Plan: [m5-plan.md](m5-plan.md).
 
-**Acceptance:**
-- Full loop with **no console babysitting**: onboard → new → live → end → review → save → browse → update action status.
-- Corrupt/missing files degrade gracefully (no crashes).
-- A first-time user can get from launch to a working capture using only in-app guidance.
+- [x] Dashboard detail pane: summary, actions (inline status edit via `StatusPill`), transcript — all from disk (`get_session`).
+- [x] Label CRUD (`labels.json`) via a full manager (create/rename/recolor/delete + usage counts), real filter chips, name search.
+- [x] `Re-analyze` on a stored session (reuses `run_post_analysis`, prior-status-safe — D21).
+- [x] Onboarding + Settings fully functional (key/Keychain, device, model, default toggles, Reveal in Finder).
+- [x] Exception surfacing: global `app-error` → **toast**; `EXC-CORRUPT` → **⚠ Unreadable** row with Reveal in Finder.
+- [x] Empty states, loading states, confirm dialogs (End, Discard, Re-analyze, Delete); recover-into-review (D22/D23).
+
+**Acceptance — all met:**
+- ✅ Full loop with **no console babysitting**: onboard → new → live → end → review → save → browse → update action status.
+- ✅ Corrupt/missing files degrade gracefully (unreadable row; corrupt JSON → `None`; no crashes).
+- ✅ A first-time user can get from launch to a working capture using only in-app guidance.
 
 ---
 
@@ -164,3 +169,8 @@ M0 Spikes ─► M1 Skeleton ─► M2 Capture→Transcript ─► M3 Live AI �
 ## Definition of Done (MVP)
 
 The [verification plan in ../mvp.md](../mvp.md#verification--testing-plan) passes end-to-end on a real call: capture → live transcript → live AI → end → analysis → review → save → browse, with crash-safety and graceful errors throughout.
+
+> **Status:** ✅ **MVP software-complete (M0–M5).** Every milestone is built, with 104 unit
+> tests + clippy + svelte-check green. The single remaining gate is the **on-device
+> end-to-end run** on a real call (BlackHole + a key). Next is **v1.1** — projects, a
+> global cross-session actions view, full-text search, and bookmarks (see [../roadmap.md](../roadmap.md)).

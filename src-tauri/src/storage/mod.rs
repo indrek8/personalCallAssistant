@@ -21,7 +21,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::session::model::{
-    Analysis, SessionDraft, SessionFull, SessionMeta, SessionStatus, TranscriptEntry,
+    Analysis, LabelRef, SessionDraft, SessionFull, SessionMeta, SessionStatus, TranscriptEntry,
 };
 use schema::Settings;
 
@@ -121,6 +121,40 @@ pub fn get_settings() -> AppResult<Settings> {
 /// Persist `settings.json` atomically.
 pub fn save_settings(settings: &Settings) -> AppResult<()> {
     write_json(&settings_path()?, settings)
+}
+
+// ----------------------------------------------------------------------------
+// Labels (global registry — labels.json, M5)
+// ----------------------------------------------------------------------------
+
+/// `…/CallAssistant/labels.json` — the global label set.
+fn labels_path() -> AppResult<PathBuf> {
+    Ok(base_dir()?.join("labels.json"))
+}
+
+/// Read the global label registry. A missing file is an empty set; an unreadable
+/// one degrades to empty (logged) rather than failing — a corrupt `labels.json`
+/// must never break the dashboard (EXC-CORRUPT).
+pub fn read_labels() -> AppResult<Vec<LabelRef>> {
+    read_labels_at(&labels_path()?)
+}
+
+fn read_labels_at(path: &Path) -> AppResult<Vec<LabelRef>> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    match read_json::<Vec<LabelRef>>(path) {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            eprintln!("[storage] ignoring unreadable labels.json at {}: {e}", path.display());
+            Ok(Vec::new())
+        }
+    }
+}
+
+/// Persist the global label registry atomically.
+pub fn write_labels(labels: &[LabelRef]) -> AppResult<()> {
+    write_json(&labels_path()?, &labels)
 }
 
 // ----------------------------------------------------------------------------
@@ -237,9 +271,10 @@ pub fn create_session(draft: SessionDraft) -> AppResult<SessionMeta> {
 
 /// Read every session's `metadata.json` into a list.
 ///
-/// Sessions whose metadata won't parse are skipped (logged) rather than failing
-/// the whole list — the dashboard must never crash on one bad row (EXC-CORRUPT
-/// handling proper comes in M5; here we degrade by omission).
+/// A session whose metadata won't parse is surfaced as an `unreadable` placeholder
+/// row (id = directory name) rather than failing the whole list or dropping it
+/// silently — the dashboard shows it as "⚠ Unreadable" with Reveal in Finder, and
+/// never crashes on one bad row (EXC-CORRUPT, M5).
 pub fn list_sessions() -> AppResult<Vec<SessionMeta>> {
     list_sessions_in(&sessions_dir()?)
 }
@@ -258,15 +293,25 @@ fn list_sessions_in(dir: &Path) -> AppResult<Vec<SessionMeta>> {
         }
         match read_json::<SessionMeta>(&meta_file) {
             Ok(meta) => out.push(meta),
-            Err(e) => eprintln!(
-                "[storage] skipping unreadable session {}: {}",
-                entry.path().display(),
-                e
-            ),
+            Err(e) => {
+                // EXC-CORRUPT: surface, don't drop. The dir name is the session id.
+                eprintln!(
+                    "[storage] surfacing unreadable session {} as a placeholder: {}",
+                    entry.path().display(),
+                    e
+                );
+                out.push(SessionMeta {
+                    id: entry.file_name().to_string_lossy().into_owned(),
+                    status: SessionStatus::Failed,
+                    unreadable: true,
+                    ..Default::default()
+                });
+            }
         }
     }
 
-    // Newest first by creation date (ISO-8601 sorts lexicographically).
+    // Newest first by creation date (ISO-8601 sorts lexicographically); unreadable
+    // placeholders have an empty date and so sink to the bottom.
     out.sort_by(|a, b| b.date.cmp(&a.date));
     Ok(out)
 }
@@ -291,6 +336,21 @@ pub fn get_session(id: &str) -> AppResult<SessionFull> {
 /// `context_notes` + `budget_cap` for the live-AI batcher (M3).
 pub fn get_session_meta(id: &str) -> AppResult<SessionMeta> {
     read_json(&metadata_path(id)?)
+}
+
+/// Permanently delete a session: remove its `sessions/{id}/` directory and every
+/// artifact under it (WAV, transcript, analysis…). Missing → `NotFound` (M5).
+pub fn delete_session(id: &str) -> AppResult<()> {
+    delete_session_in(&sessions_dir()?, id)
+}
+
+fn delete_session_in(sessions_dir: &Path, id: &str) -> AppResult<()> {
+    let dir = sessions_dir.join(id);
+    if !dir.exists() {
+        return Err(AppError::NotFound(format!("session {id}")));
+    }
+    fs::remove_dir_all(&dir)?;
+    Ok(())
 }
 
 // ----------------------------------------------------------------------------
@@ -399,8 +459,9 @@ pub fn add_api_cost(id: &str, delta: f64) -> AppResult<f64> {
 /// repair the (possibly unfinalized) WAV header and mark the session terminal so
 /// it never stays stuck as `recording`. The WAV + `transcript.jsonl` were written
 /// incrementally, so the data survives. Returns the recovered session ids. A
-/// crashed post-analysis (`ending`/`analyzing`) finalizes transcript-only; a quit
-/// mid-`reviewing` finalizes keeping its draft `analysis.json` (M4; re-run is M5).
+/// crashed post-analysis (`ending`/`analyzing`) finalizes to `completed`
+/// transcript-only (re-analyzable on demand); a quit mid-`reviewing` stays
+/// `reviewing` with its draft `analysis.json` and reopens in review (M5, D23).
 pub fn recover_stale_sessions() -> AppResult<Vec<String>> {
     recover_stale_sessions_in(&sessions_dir()?)
 }
@@ -443,7 +504,13 @@ fn recover_stale_sessions_in(dir: &Path) -> AppResult<Vec<String>> {
                 meta.duration_ms = frames * 1000 / crate::audio::wav::SAMPLE_RATE as u64;
             }
         }
-        meta.status = SessionStatus::Completed;
+        // M5 recover-into-review (D23): a crash mid-`reviewing` keeps its draft
+        // `analysis.json` and stays `reviewing`, so it reopens in the review screen.
+        // Every other stale phase finalizes to `completed` (transcript-only — and now
+        // re-analyzable on demand from the dashboard).
+        if meta.status != SessionStatus::Reviewing {
+            meta.status = SessionStatus::Completed;
+        }
         write_json(&meta_file, &meta)?;
         recovered.push(meta.id.clone());
     }
@@ -470,13 +537,8 @@ mod tests {
             id: "sess-1".into(),
             status: SessionStatus::Recording,
             name: Some("crashed".into()),
-            labels: vec![],
             date: "2026-06-20T00:00:00Z".into(),
-            duration_ms: 0,
-            participants: vec![],
-            context_notes: None,
-            budget_cap: None,
-            total_api_cost: 0.0,
+            ..Default::default()
         };
         write_json(&sdir.join("metadata.json"), &meta).unwrap();
 
@@ -501,14 +563,8 @@ mod tests {
         SessionMeta {
             id: id.into(),
             status,
-            name: None,
-            labels: vec![],
             date: "2026-06-20T00:00:00Z".into(),
-            duration_ms: 0,
-            participants: vec![],
-            context_notes: None,
-            budget_cap: None,
-            total_api_cost: 0.0,
+            ..Default::default()
         }
     }
 
@@ -554,7 +610,7 @@ mod tests {
     }
 
     #[test]
-    fn list_sessions_sorts_newest_first_and_skips_unreadable() {
+    fn list_sessions_sorts_newest_first_and_surfaces_unreadable() {
         let base = std::env::temp_dir().join(format!("ca_list_{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         for (id, date) in [
@@ -568,19 +624,20 @@ mod tests {
             m.date = date.into();
             write_json(&sd.join("metadata.json"), &m).unwrap();
         }
-        // A corrupt row is omitted, not fatal (EXC-CORRUPT degrades by omission).
+        // A corrupt row is surfaced as an `unreadable` placeholder (EXC-CORRUPT, M5),
+        // not dropped — and sinks to the bottom (empty date).
         let bad = base.join("bad");
         fs::create_dir_all(&bad).unwrap();
         fs::write(bad.join("metadata.json"), b"{ corrupt").unwrap();
-        // A dir without metadata.json is ignored.
+        // A dir without metadata.json is still ignored.
         fs::create_dir_all(base.join("nometa")).unwrap();
 
-        let ids: Vec<String> = list_sessions_in(&base)
-            .unwrap()
-            .into_iter()
-            .map(|m| m.id)
-            .collect();
-        assert_eq!(ids, vec!["b", "c", "a"], "newest-first by ISO date");
+        let rows = list_sessions_in(&base).unwrap();
+        let ids: Vec<String> = rows.iter().map(|m| m.id.clone()).collect();
+        assert_eq!(ids, vec!["b", "c", "a", "bad"], "newest-first; corrupt row last");
+        let placeholder = rows.iter().find(|m| m.id == "bad").unwrap();
+        assert!(placeholder.unreadable, "corrupt row flagged unreadable");
+        assert_eq!(placeholder.status, SessionStatus::Failed);
         let _ = fs::remove_dir_all(&base);
     }
 
@@ -688,8 +745,10 @@ mod tests {
     }
 
     #[test]
-    fn recovers_a_reviewing_session_keeping_its_draft() {
-        // A quit mid-review finalizes to `completed` but must KEEP the draft analysis.
+    fn recovers_a_reviewing_session_into_review_keeping_its_draft() {
+        // M5 (D23): a quit mid-review STAYS `reviewing` and keeps its draft analysis,
+        // so it reopens in the review screen (recover-into-review) rather than silently
+        // completing.
         let base = std::env::temp_dir().join(format!("ca_recov_review_{}", std::process::id()));
         let _ = fs::remove_dir_all(&base);
         let sdir = base.join("s");
@@ -704,8 +763,51 @@ mod tests {
 
         assert_eq!(recover_stale_sessions_in(&base).unwrap(), vec!["s".to_string()]);
         let after: SessionMeta = read_json(&sdir.join("metadata.json")).unwrap();
-        assert_eq!(after.status, SessionStatus::Completed);
+        assert_eq!(after.status, SessionStatus::Reviewing, "stays reviewing for recover-into-review");
         assert!(sdir.join("analysis.json").exists(), "draft analysis must survive recovery");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn labels_round_trip_and_tolerate_missing_or_corrupt() {
+        let dir = std::env::temp_dir().join(format!("ca_labels_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("labels.json");
+        // Missing → empty.
+        assert!(read_labels_at(&path).unwrap().is_empty());
+        // Round-trip.
+        let labels = vec![
+            LabelRef { id: "a".into(), name: "Acme".into(), color: Some("#d4a843".into()) },
+            LabelRef { id: "g".into(), name: "Globex".into(), color: None },
+        ];
+        write_json(&path, &labels).unwrap();
+        let back = read_labels_at(&path).unwrap();
+        assert_eq!(back.len(), 2);
+        assert_eq!(back[0].name, "Acme");
+        assert_eq!(back[0].color.as_deref(), Some("#d4a843"));
+        // Corrupt → empty (degrade, never break the dashboard).
+        fs::write(&path, b"{ not an array").unwrap();
+        assert!(read_labels_at(&path).unwrap().is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn delete_session_removes_the_dir_and_reports_missing() {
+        let base = std::env::temp_dir().join(format!("ca_del_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let sdir = base.join("s1");
+        fs::create_dir_all(&sdir).unwrap();
+        write_json(&sdir.join("metadata.json"), &session_meta("s1", SessionStatus::Completed)).unwrap();
+        fs::write(sdir.join("audio.wav"), b"x").unwrap();
+
+        delete_session_in(&base, "s1").unwrap();
+        assert!(!sdir.exists(), "session dir removed");
+        // Deleting a missing session is a NotFound, not a silent success.
+        assert!(matches!(
+            delete_session_in(&base, "nope"),
+            Err(AppError::NotFound(_))
+        ));
         let _ = fs::remove_dir_all(&base);
     }
 }
