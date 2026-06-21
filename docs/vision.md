@@ -1,6 +1,6 @@
-# Version 1 — Product Vision
+# Product Vision — v1.0 (Beta)
 
-> **This is the destination, not the build plan.** Version 1 is the full, ambitious product described below. We get here *iteratively*: the first iteration is the **[MVP](mvp.md)**, and **[roadmap.md](roadmap.md)** is the step-by-step path that walks the MVP toward this vision. The technical design — stack, audio architecture, data model — lives in **[architecture.md](architecture.md)**.
+> **This is the destination, not the build plan.** v1.0 (Beta) is the full, ambitious product described below. We get here *iteratively*: the first iteration is the **[MVP](mvp.md)**, and **[roadmap.md](roadmap.md)** is the step-by-step path that walks the MVP toward this vision. The technical design — stack, audio architecture, data model — lives in **[architecture.md](architecture.md)**.
 
 ---
 
@@ -64,7 +64,7 @@ No tabs, no multiple views. One window. Sidebar for navigation, main area shows 
 
 Clicking anything in the sidebar changes the main area.
 
-> **MVP note:** the MVP starts flatter — a mail-inbox dashboard with **labels** instead of a projects tree, and actions scoped to each session rather than a global list. The sidebar + projects + global-actions model here is the v1 target. See [mvp.md](mvp.md) and [roadmap.md](roadmap.md).
+> **MVP note:** the MVP starts flatter — a mail-inbox dashboard with **labels** instead of a projects tree, and actions scoped to each session rather than a global list. The sidebar + projects + global-actions model here is the v1.0 (Beta) target. See [mvp.md](mvp.md) and [roadmap.md](roadmap.md).
 
 ---
 

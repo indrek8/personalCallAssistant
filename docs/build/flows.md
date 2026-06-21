@@ -234,7 +234,7 @@ The contract for everything that can go wrong. Every one has a defined detection
 
 ## 10. Permissions & One-Time System Setup
 
-These are macOS realities the UX must hand-hold (until the v1 HAL plugin removes them).
+These are macOS realities the UX must hand-hold (until the v0.4 HAL plugin removes them).
 
 **A. Microphone permission** — requested lazily on first capture via `AVCaptureDevice`/cpal. If denied, EXC-MIC-PERM deep-links to System Settings → Privacy → Microphone.
 

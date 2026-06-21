@@ -198,7 +198,7 @@ Each case: **Steps → Expected → ✅ Pass when**. Check the box when it passe
 - **Known quirk:** fallback always targets the default **input** device, so dropping the
   *BlackHole* (Remote) side rebuilds it onto your mic rather than a loopback — fine for
   not-crashing, but Remote audio won't resume until BlackHole is back and a new session
-  starts. Seamless hot-swap is a v1/HAL concern.
+  starts. Seamless hot-swap is a v0.4/HAL concern.
 
 ### T9 — Ground-truth files on disk
 - [ ] **Steps:** After any capture, open

@@ -19,7 +19,7 @@ Implementation-grade plan for building the MVP — detailed enough to code again
 3. **Ground truth on disk.** The WAV + `transcript.jsonl` are written incrementally and atomically — every failure degrades to "you still have the recording and transcript."
 4. **Thin frontend.** Svelte renders events; all real work is in Rust.
 5. **No silent failure.** Every exception in [flows.md](flows.md) §9 has a defined user-facing behavior and recovery.
-6. **Build forward.** Stable IDs + normalized storage so v1's projects/global-actions ([../roadmap.md](../roadmap.md)) are an additive migration.
+6. **Build forward.** Stable IDs + normalized storage so v0.2's projects/global-actions ([../roadmap.md](../roadmap.md)) are an additive migration.
 
 ## Decisions log
 
@@ -28,7 +28,7 @@ Key technical decisions made in these docs (revisit consciously, not by accident
 | # | Decision | Rationale | Status |
 |---|---|---|---|
 | D1 | **2-stream You/Remote audio** — Multi-Output Device for remote + direct mic | Free speaker attribution without diarization | **Validated — M0 S1+S2+S3 passed:** whisper `small` RTF ~0.04 single / ~0.03 concurrent ×2 (~25× realtime headroom); S3 dual-capture on hardware → clean L/R attribution (idle channel held -120 dBFS = zero cross-bleed). |
-| D2 | **No virtual mic in MVP** — passive listening only | Meeting app keeps using the real mic; virtual-mic proxy is a v1/HAL concern | Locked |
+| D2 | **No virtual mic in MVP** — passive listening only | Meeting app keeps using the real mic; virtual-mic proxy is a v0.4/HAL concern | Locked |
 | D3 | Incremental, atomic writes (temp→fsync→rename) | Crash safety; recovery | Locked |
 | D4 | VAD segmentation with a hard-max length | Avoids mid-word slicing and unbounded waits | Locked |
 | D5 | Whisper **`medium`** recommended default, **`small`** the floor; the user picks in onboarding (`base` hidden from the picker); downloaded on demand | Best accuracy at negligible cost — medium is real-time too; `base` is too weak for meeting terms | **Validated (M0/S1):** medium RTF 0.055, small 0.040 — both ~20× realtime |
@@ -36,7 +36,7 @@ Key technical decisions made in these docs (revisit consciously, not by accident
 | D7 | Event-driven frontend, single `mode` store as router | Matches the state machine; no URL routing needed | Locked |
 | D8 | Flat-file storage with normalized IDs | Simple MVP, forward-compatible | Locked |
 | D9 | **Transcript as `transcript.jsonl`** (append-only, one entry per line) | True crash-safe incremental writes (no array-rewrite window) — the §9 "JSONL internally" option; read back into the array the UI expects | **M2** |
-| D10 | **EXC-DEV-DROP = detect → rebuild on the default device → notify** (retry-capped per side) | A mid-call device unplug must not freeze capture; seamless hot-swap stays a v1/HAL concern | **M2** |
+| D10 | **EXC-DEV-DROP = detect → rebuild on the default device → notify** (retry-capped per side) | A mid-call device unplug must not freeze capture; seamless hot-swap stays a v0.4/HAL concern | **M2** |
 | D11 | **API key in macOS Keychain** (`keyring`), read precedence Keychain → `ANTHROPIC_API_KEY` env | Shipped-app design; never in `settings.json`; env keeps the dev/spike path working | **M3** |
 | D12 | **Live findings via structured outputs** (`output_config.format` json_schema) | The API guarantees schema-valid JSON on Haiku; defensive parse stays a fallback | **M3** |
 | D13 | **Ask-AI streamed** (SSE → `ai-chat-token`) | Word-by-word answers feel right mid-call | **M3** |
@@ -65,4 +65,4 @@ M4  Post-analysis       Sonnet extraction → review/edit → save
 M5  Manage & polish     dashboard, labels, settings, onboarding, error handling
 ```
 
-**Progress:** **MVP software-complete (M0–M5).** **M5 ✅** (PR #15) — the manage layer: real dashboard detail pane (summary/actions with inline status/transcript from disk), a full label manager (`labels.json`), Re-analyze, delete/discard, recover-into-review, error toasts, and confirm dialogs. **104 unit tests**, clippy + svelte-check clean. Plan: [m5-plan.md](m5-plan.md). **M4 ✅** (PR #14) — post-analysis: End → Sonnet structured extraction (`ai/analyze.rs`) → merge with live/saved commitments → review/edit → Save & Close. **M3 ✅** (PRs #9–#12) — Claude client + Keychain keys, live Haiku findings + F/C/S/Q toggles + cost, streamed Sonnet Ask-AI. M2 ✅ (PRs #4–#8) — capture → live two-sided transcript. M1 ✅ (PR #1); **M0 ✅** (s1–s4). **Next → [v1.1](../roadmap.md#v11--organization--tracking)** (projects, global actions view, full-text search, bookmarks) — the remaining MVP gate is the on-device end-to-end run.
+**Progress:** **MVP software-complete (M0–M5).** **M5 ✅** (PR #15) — the manage layer: real dashboard detail pane (summary/actions with inline status/transcript from disk), a full label manager (`labels.json`), Re-analyze, delete/discard, recover-into-review, error toasts, and confirm dialogs. **104 unit tests**, clippy + svelte-check clean. Plan: [m5-plan.md](m5-plan.md). **M4 ✅** (PR #14) — post-analysis: End → Sonnet structured extraction (`ai/analyze.rs`) → merge with live/saved commitments → review/edit → Save & Close. **M3 ✅** (PRs #9–#12) — Claude client + Keychain keys, live Haiku findings + F/C/S/Q toggles + cost, streamed Sonnet Ask-AI. M2 ✅ (PRs #4–#8) — capture → live two-sided transcript. M1 ✅ (PR #1); **M0 ✅** (s1–s4). **Next → [v0.2](../roadmap.md#v02--organization--tracking)** (projects, global actions view, full-text search, bookmarks) — the remaining MVP gate is the on-device end-to-end run.
