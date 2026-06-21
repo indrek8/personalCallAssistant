@@ -6,8 +6,10 @@
 > says so. Read alongside [milestones.md](milestones.md) (what's built) and
 > [flows.md](flows.md) §9 (the EXC-* contract these cases map to).
 >
-> **Current coverage: M0–M3.** M4 (post-analysis), M5 (manage/polish)
-> sections get appended as those milestones land.
+> **Current coverage: M0–M5 (MVP software-complete).** Per-milestone cases are **T1–T24**
+> (+ the M3/M4/M5 sections). The capstone is **[E2E — MVP Acceptance Run](#e2e--mvp-acceptance-run-the-on-device-gate)**
+> at the end: one continuous on-device run that closes the MVP — the single check the
+> 104 unit tests + clippy + svelte-check can't do for you.
 
 ---
 
@@ -305,7 +307,7 @@ inert Ask-AI bar are now live. All cases below need a Claude API key set in Sett
 
 ---
 
-## M4 — Post-Analysis is now real (branch `feat/m4-post-analysis`)
+## M4 — Post-Analysis is now real (PR #14)
 
 End no longer jumps to the dashboard — it routes to the **Post-Analysis** screen. The §0
 "End Session" stub row is now live (the Dashboard *detail pane* stays mock until M5). New
@@ -340,7 +342,7 @@ per-session file: `analysis.json`.
 
 ---
 
-## M5 — Manage, Settings & Polish is now real (branch `feat/m5-manage-polish`)
+## M5 — Manage, Settings & Polish is now real (PR #15)
 
 The §0 stubbed rows for the **Dashboard detail pane**, **labels**, **Re-analyze**, and
 **Reveal in Finder** are now live. The detail pane shows the **real** session (no more CBUAE
@@ -399,3 +401,101 @@ mock). New global file: `labels.json`.
 
 **EXC mapping update:** EXC-CORRUPT is now a visible "⚠ Unreadable" row (M5); recover-into-review
 (D23) routes a crashed `reviewing` session back to Post.
+
+---
+
+## E2E — MVP Acceptance Run (the on-device gate)
+
+> The single end-to-end run that **closes the MVP**: one real call, start to finish, exercising
+> every screen and the key exceptions on real hardware. Everything below the line in
+> [milestones.md → Definition of Done](milestones.md#definition-of-done-mvp) is already green
+> (104 unit tests, clippy, svelte-check) — **this** is the check software can't do. Budget
+> **~45–60 min** for both passes. The per-feature detail lives in T1–T24 above; this is the
+> holistic script. Tick each box; note anything that misbehaves in **Run log** at the bottom.
+
+### Setup (once, before the run)
+
+**A · Audio (the part that bites)**
+- [ ] BlackHole 2ch installed **and the Mac rebooted** after install (§1).
+- [ ] **Multi-Output Device** = your headphones **+** BlackHole 2ch, set as the system (or meeting-app) **output** (§1 / §10).
+- [ ] **Headphones on.** Open speakers → your mic re-captures the remote side → echo + double transcription.
+- [ ] A **"remote" audio source** ready: a real Teams/Meet/Zoom call, *or* a talky YouTube clip / podcast played through the Multi-Output.
+
+**B · App**
+- [ ] A real **Claude API key** to paste during onboarding.
+- [ ] A Whisper model in mind (**small** = quick download; **medium** = most accurate).
+- [ ] **Clean slate for a true first-run:** quit, then delete `~/Library/Application Support/CallAssistant/` (§2).
+- [ ] Launch: `npm run tauri dev` (first build compiles whisper.cpp — slow once).
+
+**C · Capture as you go** — jot: transcript latency (speak → line), finding latency, analysis time, the running **API cost**, and anything wrong. Use the **Run log** template at the end.
+
+### Pass 1 — the happy path (one continuous run, no restarts)
+
+1. **Onboard** — paste the key → **Test** (✓ Connected · saved to Keychain) → pick your mic → **download the model** (watch % → ✓ ready) → finish.
+   - ✅ lands on an empty Dashboard; a later relaunch skips onboarding.
+2. **New Session** — `[+ New Session]`: name it "E2E Run"; **add a label** by typing a new name (e.g. "Test") + pick a color (create-on-type); add 1–2 participants; paste **prep notes** with a checkable fact (e.g. *"Phase 2 deadline is Aug 2026 per circular CB-2025-041"*); turn on **F + C** (+ S/Q); confirm the capture device; **Start**.
+   - ✅ pre-flight passes (key + loopback + model); Live takes over full-screen. *(If a check fails it offers the fix — see T3.)*
+3. **Live · capture both sides** — speak a few sentences (**You**, gold). Seat the remote audio (**Remote**, teal). Speak a **commitment** ("I'll send the report by Friday") and a **claim that conflicts** with your prep note ("the deadline is end of Q2").
+   - ✅ both sides transcribe with correct attribution within ~10 s, **no cross-bleed**; timer runs; "Listening…" pulses. *(detail: T4.)*
+4. **Live · AI** — within a batch cycle (≤ ~30 s) a **Commitment** and a **Fact-check** finding appear; the **cost meter** ticks. Click **`[+ Save action]`** on the commitment (→ "✓ Saved"). In **Ask AI** type *"summarize what we've agreed so far"* → the answer **streams in** word-by-word.
+   - ✅ right findings; save-action sticks; Ask-AI streams; cost increments. Toggle **all four off** → **zero** further calls (watch the meter). *(detail: M3-2/M3-3.)*
+5. **Pause / Resume** — Pause ~10 s (timer freezes, nothing captured), Resume, speak again.
+   - ✅ paused time excluded; no pause-gap audio leaks in. *(detail: T5.)*
+6. **End** — **End** → the styled **confirm dialog** (not the OS prompt) → confirm.
+   - ✅ routes to Post with the "Analyzing your session…" spinner.
+7. **Post · review** — within ~30 s: a real **summary**, **actions** (your saved commitment among them; owners/deadlines/quotes; no obvious dupes), **decisions**, and a meta-rail **cost that now includes the Sonnet call**. Edit the summary; **uncheck** one action; change an **owner** + **due date**; **+ Add action** manually; click **Regenerate** once (re-bills, by design).
+   - ✅ edits behave; the "N of M" count tracks included rows. *(detail: T13/T14.)*
+8. **Save & Close** — → Dashboard; the session is present and `completed`.
+   - ✅ only the **checked** actions + your edits were saved. *(detail: T15.)*
+9. **Browse · real detail pane** — select the session → its **real** summary / actions / decisions / transcript (**not** the old CBUAE mock). Change an action's **status** inline (Pending → In progress → Done); expand the transcript.
+   - ✅ the pane is the real session; inline status sticks (no spinner flash) and `completed_at` sets on Done. *(detail: T18.)*
+10. **Manage · labels** — **Manage labels**: rename your label, recolor it, see its **usage count (1)**. Back on the dashboard the row chip + the **filter chip** reflect the rename; click the filter chip → list narrows to that label. *(detail: T19.)*
+    - ✅ rename/recolor reflects everywhere; filter works.
+11. **Re-analyze** — select the session → **Re-analyze** → confirm → Post re-runs → **Save & Close**.
+    - ✅ overwrites cleanly; the session stays `completed`. *(detail: T20.)*
+12. **Settings** — gear → **Reveal in Finder** opens the storage folder; confirm the device / model / default-toggle choices persisted. *(detail: T10/T24.)*
+    - ✅ Finder opens `CallAssistant/`.
+13. **Persist** — quit + relaunch.
+    - ✅ straight to Dashboard; the session + analysis + label survive; cost includes every AI call.
+14. **Ground truth on disk** — open `…/sessions/{id}/`: `audio.wav` (stereo, **L = you / R = remote** — `afplay` or pan-check), `transcript.jsonl`, `analysis.json` (your edits), `metadata.json` (`completed`), plus `ai_live.json` / `chat.json` / `saved_actions.json`; and `…/labels.json` holds your label. *(detail: T9.)*
+    - ✅ files match what you saw on screen.
+
+### Pass 2 — exceptions & recovery (trigger each deliberately)
+
+Each is independent; reset or continue as noted. Map: [flows.md §9](flows.md#9-exception--recovery-catalogue).
+
+- [ ] **EXC-API-LIVE** — mid-call, kill Wi-Fi. ✅ transcript keeps flowing; after ~3 failed batches a quiet "AI paused" notice; findings resume when Wi-Fi returns. *(T-ref: M3-2.)*
+- [ ] **EXC-BUDGET** — run with a low budget cap (lower `budget_default`, or edit `settings.json`) and talk past it. ✅ a budget toast; **live AI pauses, transcript continues**; an explicit **Ask-AI still answers** (D16).
+- [ ] **EXC-DEV-DROP** — start with a USB/Bluetooth mic; unplug it mid-call. ✅ a toast "input disconnected — switched to {default}"; capture continues; session not lost. *(T-ref: T8.)*
+- [ ] **EXC-CRASH (transcript-only)** — start, speak ~20 s, **Force Quit** (don't End). Relaunch. ✅ a "recovered" toast; the session is in the list `completed`, WAV + transcript intact. *(T-ref: T7.)*
+- [ ] **EXC-CRASH → recover-into-review (D23)** — End a real session, wait for the draft to appear in Post, then **Force Quit** *while in review*. Relaunch. ✅ a **sticky "Recovered a session mid-review" toast** with **Resume review** → reopens the draft **without re-billing** (status stayed `reviewing`). *(T-ref: T22.)*
+- [ ] **EXC-API-POST** — kill Wi-Fi, then End a session. ✅ an error panel with **Retry / Save without analysis / Back to dashboard / Discard**; *Save without analysis* yields a `completed` transcript-only session; *Retry* works once Wi-Fi is back. *(T-ref: T16.)*
+- [ ] **EXC-EMPTY** — End a near-silent session (< ~25 words). ✅ **no Sonnet call**; a minimal "Nothing substantial captured" review; still saveable. *(T-ref: T17.)*
+- [ ] **EXC-CORRUPT** — quit; hand-edit a session's `metadata.json` to invalid JSON; relaunch. ✅ a **⚠ Unreadable** row (folder name as id) offering **Reveal in Finder** + **Delete**; the rest of the list still works. *(T-ref: T23.)*
+- [ ] **Delete / Discard** — Delete a session from the dashboard (confirm) and Discard one from Post (confirm). ✅ both **fully remove** the session folder from disk + the list. *(T-ref: T21.)*
+
+### Definition of Done — sign-off
+
+The MVP is **accepted** when Pass 1 completes clean and Pass 2 behaves as described:
+
+- [ ] **Capture** → live two-sided transcript within ~10 s, correct You/Remote attribution, no cross-bleed.
+- [ ] **Live AI** → right findings, cost meter increments, all-toggles-off ⇒ zero calls, failures never break the transcript.
+- [ ] **Post-analysis** → editable summary + actions (owner/date/quote) within ~30 s; Save persists; survives restart.
+- [ ] **Browse & manage** → real detail pane, inline status, label CRUD, Re-analyze, delete — **no console babysitting**.
+- [ ] **Every exception** degrades gracefully; the **WAV + transcript are never lost**.
+- [ ] A **first-timer** gets from launch → a working capture using only in-app guidance.
+
+### Run log (fill in)
+
+```
+Date:              ____________   Build/commit: ____________
+Mac / chip:        ____________   Whisper model: ____________
+Transcript latency (speak→line):  ~____ s     Finding latency: ~____ s
+Post-analysis time:               ~____ s     Total API cost this run: $______
+Pass 1:  ☐ clean   ☐ issues →
+Pass 2:  ☐ clean   ☐ issues →
+Defects / notes:
+  -
+  -
+Verdict:  ☐ MVP ACCEPTED   ☐ blockers (list above)
+```
