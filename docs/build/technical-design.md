@@ -241,7 +241,7 @@ sessions/{uuid}/
 - **Incremental append strategy:** `transcript.jsonl`/`ai_live.json` are written as JSON arrays via append-friendly rewrite (or JSONL internally, serialized to JSON on read) so the latest state survives a crash.
 - **Recovery scan (boot):** stale sessions (`recording`/`paused`/`ending`/`analyzing`, or a `draft` with a real WAV) finalize to `completed` transcript-only; a crashed **`reviewing`** session **stays `reviewing`** with its draft and reopens in review via an actionable toast (M5, D23). Each emits `session-recovered` (EXC-CRASH).
 - **Labels (M5):** `labels.json` is a global `Vec<LabelRef>` registry; sessions embed `LabelRef` snapshots and the dashboard resolves id→name/color from the registry (D24). A session whose `metadata.json` won't parse surfaces as an `unreadable` placeholder row instead of being skipped (EXC-CORRUPT, D25).
-- **Forward-compatibility:** every entity has a stable `id`; storage stays normalized enough that v1's projects + global-actions view is an additive migration (see [../roadmap.md](../roadmap.md)).
+- **Forward-compatibility:** every entity has a stable `id`; storage stays normalized enough that v0.2's projects + global-actions view is an additive migration (see [../roadmap.md](../roadmap.md)).
 
 ---
 

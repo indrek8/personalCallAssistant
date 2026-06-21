@@ -1,6 +1,6 @@
-# MVP — First Iteration Toward v1
+# MVP (v0.1) — First Iteration Toward v1.0
 
-> The MVP is the **smallest build that's genuinely useful and proves the hard parts**. It's the first step toward **[Version 1](vision.md)**; the sequence that closes the gap is in **[roadmap.md](roadmap.md)**. Technical design is in **[architecture.md](architecture.md)**; the screen-by-screen UI spec is in **[design/ui-spec.md](../design/ui-spec.md)**.
+> The MVP is the **smallest build that's genuinely useful and proves the hard parts**. It's the first step toward **[v1.0 (Beta)](vision.md)**; the sequence that closes the gap is in **[roadmap.md](roadmap.md)**. Technical design is in **[architecture.md](architecture.md)**; the screen-by-screen UI spec is in **[design/ui-spec.md](../design/ui-spec.md)**.
 
 ## Goal
 
@@ -10,7 +10,7 @@ A working **end-to-end flow**: start a session → capture audio → see a live 
 
 The planning docs originally disagreed on two forks; both are settled for the MVP:
 
-- **Product shape → Dashboard + Labels.** Flat session list (Apple Mail split-pane), sessions tagged with labels, actions scoped to each session. *Not* the sidebar + projects + global-actions model from [vision.md](vision.md) — that's a v1 target, sequenced in [roadmap.md](roadmap.md).
+- **Product shape → Dashboard + Labels.** Flat session list (Apple Mail split-pane), sessions tagged with labels, actions scoped to each session. *Not* the sidebar + projects + global-actions model from [vision.md](vision.md) — that's a v1.0 (Beta) target, sequenced in [roadmap.md](roadmap.md).
 - **Frontend → Svelte + TypeScript.** (`design/sidebar-prototype.jsx` is a React prototype of the off-path sidebar model — reference only. The canonical prototype is `design/prototype.html`.)
 
 Full stack + rationale: [architecture.md](architecture.md).

@@ -71,10 +71,10 @@ boot recovery:  reviewing → stays reviewing (draft kept) ─Resume→ Post(res
 
 `storage/mod.rs`: labels round-trip + missing/corrupt → `[]`; `delete_session` removes the dir + missing → `NotFound`; (modified) `list_sessions` surfaces an `unreadable` placeholder; (modified) recovery keeps a `reviewing` session reviewing. `commands.rs`: `upsert_label` create/dedupe/empty + explicit-color; `apply_label_update` rename/recolor/unknown + color-only; `remove_label` delete/unknown; `next_label_color` cycling. (Frontend: `svelte-check` only — no FE unit harness.)
 
-## Boundaries (deferred to v1+, per roadmap)
+## Boundaries (deferred post-MVP, per roadmap)
 
-- **Session playback** (audio-synced scrub) — the detail transcript is read-only, no timeline (v1.2).
-- **Projects / global cross-session actions view** — labels stay session-scoped (v1.1).
-- **Full-text search** across transcripts (v1.1) — dashboard search stays name-only.
+- **Session playback** (audio-synced scrub) — the detail transcript is read-only, no timeline (v0.3).
+- **Projects / global cross-session actions view** — labels stay session-scoped (v0.2).
+- **Full-text search** across transcripts (v0.2) — dashboard search stays name-only.
 - **Editing session metadata** (name/participants/context) after creation.
 - **Cascade label-delete** rewriting every session — registry-only delete; embedded snapshots persist.

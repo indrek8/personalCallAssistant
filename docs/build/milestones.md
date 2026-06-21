@@ -160,11 +160,11 @@ M0 Spikes ─► M1 Skeleton ─► M2 Capture→Transcript ─► M3 Live AI �
 | Risk | Likelihood | Mitigation |
 |---|---|---|
 | Whisper too slow for real-time | Med | **M0/S1–S2 first**; fall back `small`→`base`, or mixed-mono single pass |
-| Dual-capture / Multi-Output flaky | Med | **M0/S3**; clear setup UX; soft-warn (EXC-NOMULTI); v1 HAL plugin removes it |
+| Dual-capture / Multi-Output flaky | Med | **M0/S3**; clear setup UX; soft-warn (EXC-NOMULTI); v0.4 HAL plugin removes it |
 | macOS mic/notarization friction | Med | Handle permission flow early (M1–M2); dev-sign; notarize before distribution |
 | Live AI cost surprises | Low | Budget cap + cost meter + "all toggles off = no calls" |
 | whisper-rs build issues on Apple Silicon | Med | Pin versions; validate in M0; document toolchain |
-| Scope creep from v1 features | Med | Anything not in [../mvp.md](../mvp.md) → [../roadmap.md](../roadmap.md), no exceptions |
+| Scope creep from post-MVP features | Med | Anything not in [../mvp.md](../mvp.md) → [../roadmap.md](../roadmap.md), no exceptions |
 
 ## Definition of Done (MVP)
 
@@ -172,5 +172,5 @@ The [verification plan in ../mvp.md](../mvp.md#verification--testing-plan) passe
 
 > **Status:** ✅ **MVP software-complete (M0–M5).** Every milestone is built, with 104 unit
 > tests + clippy + svelte-check green. The single remaining gate is the **on-device
-> end-to-end run** on a real call (BlackHole + a key). Next is **v1.1** — projects, a
+> end-to-end run** on a real call (BlackHole + a key). Next is **v0.2** — projects, a
 > global cross-session actions view, full-text search, and bookmarks (see [../roadmap.md](../roadmap.md)).
