@@ -67,7 +67,10 @@ pub struct SessionDraft {
 }
 
 /// Full persisted metadata (`sessions/{uuid}/metadata.json`).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Default` is derived so `list_sessions` can synthesize a minimal placeholder for
+/// an unreadable session (M5, see `unreadable`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SessionMeta {
     pub id: String,
     pub status: SessionStatus,
@@ -76,6 +79,7 @@ pub struct SessionMeta {
     #[serde(default)]
     pub labels: Vec<LabelRef>,
     /// ISO-8601 creation timestamp.
+    #[serde(default)]
     pub date: String,
     #[serde(default)]
     pub duration_ms: u64,
@@ -87,6 +91,11 @@ pub struct SessionMeta {
     pub budget_cap: Option<f64>,
     #[serde(default)]
     pub total_api_cost: f64,
+    /// `true` only for a synthesized placeholder when a session's `metadata.json`
+    /// won't parse (EXC-CORRUPT) — surfaced as an "⚠ Unreadable" dashboard row, never
+    /// written to disk for a real session (M5).
+    #[serde(default)]
+    pub unreadable: bool,
 }
 
 impl SessionMeta {
@@ -104,6 +113,7 @@ impl SessionMeta {
             context_notes: draft.context_notes,
             budget_cap: draft.budget_cap,
             total_api_cost: 0.0,
+            unreadable: false,
         }
     }
 }

@@ -4,26 +4,145 @@
     selectedSessionId,
     selectedSession,
     navigate,
+    labels,
+    resolveLabel,
+    refreshSessions,
+    postSessionId,
+    postMode,
+    pushToast,
   } from "$lib/stores";
-  import { labelClass, shortDate, longDate, fmtDuration } from "$lib/mock";
+  import { getSession, updateActionStatus, deleteSession, revealInFinder } from "$lib/ipc";
+  import { shortDate, longDate, fmtDuration } from "$lib/format";
+  import type { SessionFull, AnalysisAction, ActionStatus } from "$lib/types";
   import Mark from "$lib/components/Mark.svelte";
+  import LabelChip from "$lib/components/LabelChip.svelte";
+  import StatusPill from "$lib/components/StatusPill.svelte";
+  import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
+  import LabelManager from "$lib/components/LabelManager.svelte";
 
   let search = $state("");
-  let segment = $state<"All" | "Acme" | "Globex">("All");
+  let labelFilter = $state<string | null>(null); // label id, or null = All
 
   const filtered = $derived(
     $sessions.filter((s) => {
       const name = (s.name ?? "Untitled session").toLowerCase();
       if (search && !name.includes(search.toLowerCase())) return false;
-      if (segment === "All") return true;
-      return s.labels.some((l) =>
-        l.name.toLowerCase().includes(segment.toLowerCase()),
-      );
+      if (labelFilter && !s.labels.some((l) => l.id === labelFilter)) return false;
+      return true;
     }),
   );
 
   function select(id: string) {
     selectedSessionId.set(id);
+  }
+
+  // ---- detail pane: load the full session (meta + transcript + analysis) ----
+  let detail = $state<SessionFull | null>(null);
+  let detailState = $state<"idle" | "loading" | "loaded" | "error">("idle");
+  let detailErr = $state("");
+  let loadedId: string | null = null;
+
+  async function loadDetail(id: string, silent = false) {
+    if (!silent) detailState = "loading";
+    loadedId = id;
+    try {
+      const full = await getSession(id);
+      if (loadedId !== id) return; // a newer selection won the race
+      detail = full;
+      detailState = "loaded";
+    } catch (e) {
+      if (loadedId !== id) return;
+      detailErr = String(e);
+      detailState = "error";
+    }
+  }
+
+  // Selection drives the detail fetch. An unreadable placeholder has no detail.
+  $effect(() => {
+    const id = $selectedSessionId;
+    const sel = $selectedSession;
+    if (!id || sel?.unreadable) {
+      detail = null;
+      detailState = "idle";
+      loadedId = null;
+      return;
+    }
+    if (id !== loadedId) void loadDetail(id);
+  });
+
+  const openCount = $derived(
+    (detail?.analysis?.actions ?? []).filter((a) => a.status !== "done" && a.status !== "wont_do").length,
+  );
+
+  async function setStatus(actionId: string, status: ActionStatus) {
+    const id = $selectedSessionId;
+    if (!id) return;
+    try {
+      await updateActionStatus(id, actionId, status);
+      await loadDetail(id, true); // silent re-fetch — no spinner flash
+    } catch (e) {
+      pushToast(`Could not update status: ${String(e)}`, { kind: "error" });
+    }
+  }
+
+  // ---- re-analyze / resume / delete ----
+  let confirmKind = $state<null | "reanalyze" | "delete">(null);
+  let showLabels = $state(false);
+  let showTranscript = $state(false);
+
+  function goAnalyze(mode: "reanalyze" | "resume") {
+    const id = $selectedSessionId;
+    if (!id) return;
+    confirmKind = null;
+    postMode.set(mode);
+    postSessionId.set(id);
+    navigate("post");
+  }
+
+  async function doDelete() {
+    const id = $selectedSessionId;
+    if (!id) return;
+    confirmKind = null;
+    try {
+      await deleteSession(id);
+      selectedSessionId.set(null);
+      detail = null;
+      detailState = "idle";
+      loadedId = null;
+      await refreshSessions();
+    } catch (e) {
+      pushToast(`Could not delete session: ${String(e)}`, { kind: "error" });
+    }
+  }
+
+  async function reveal() {
+    try {
+      await revealInFinder(); // opens the storage directory
+    } catch (e) {
+      pushToast(`Could not reveal in Finder: ${String(e)}`, { kind: "error" });
+    }
+  }
+
+  function ownerOf(a: AnalysisAction): string {
+    return a.owner?.trim() || (a.owner_type === "mine" ? "Me" : "Them");
+  }
+
+  function actionSub(a: AnalysisAction): string {
+    const parts = [ownerOf(a)];
+    if (a.deadline) parts.push(`due ${a.deadline}`);
+    if (a.completed_at) parts.push(`done ${shortDate(a.completed_at)}`);
+    return parts.join(" · ");
+  }
+
+  /** ms from capture start → "m:ss" / "h:mm:ss". */
+  function clock(ms: number): string {
+    const s = Math.floor(ms / 1000);
+    const sec = s % 60;
+    const m = Math.floor(s / 60) % 60;
+    const h = Math.floor(s / 3600);
+    return h > 0
+      ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+      : `${m}:${String(sec).padStart(2, "0")}`;
   }
 </script>
 
@@ -51,11 +170,15 @@
     <div class="list-pane rise r2">
       <div class="list-head">
         <div class="eyebrow">{filtered.length} session{filtered.length === 1 ? "" : "s"}</div>
-        <div class="seg">
-          {#each ["All", "Acme", "Globex"] as const as seg}
-            <button class:on={segment === seg} onclick={() => (segment = seg)}>{seg}</button>
-          {/each}
-        </div>
+        <button class="manage" onclick={() => (showLabels = true)}>Manage labels</button>
+      </div>
+      <div class="filter-row">
+        <button class="fchip" class:on={labelFilter === null} onclick={() => (labelFilter = null)}>All</button>
+        {#each $labels as l (l.id)}
+          <button class="fchip" class:on={labelFilter === l.id} onclick={() => (labelFilter = l.id)}>
+            <LabelChip label={l} />
+          </button>
+        {/each}
       </div>
       <div class="list scroll">
         {#if filtered.length === 0}
@@ -68,19 +191,22 @@
           </div>
         {:else}
           {#each filtered as s (s.id)}
-            <button class="s-row" class:sel={$selectedSessionId === s.id} onclick={() => select(s.id)}>
+            <button class="s-row" class:sel={$selectedSessionId === s.id} class:bad={s.unreadable} onclick={() => select(s.id)}>
               <div class="top">
-                <span class="name">{s.name ?? "Untitled session"}</span>
-                <span class="date">{shortDate(s.date)}</span>
+                <span class="name">{s.unreadable ? "⚠ Unreadable session" : (s.name ?? "Untitled session")}</span>
+                {#if !s.unreadable}<span class="date">{shortDate(s.date)}</span>{/if}
               </div>
               <div class="meta">
                 <div class="labels">
-                  {#each s.labels as l}
-                    <span class="lbl {labelClass(l.name)}">{l.name}</span>
-                  {/each}
+                  {#if s.unreadable}
+                    <span class="bad-id">{s.id}</span>
+                  {:else}
+                    {#each s.labels as l (l.id)}<LabelChip label={resolveLabel(l, $labels)} />{/each}
+                    {#if s.status === "reviewing"}<span class="badge-review">Needs review</span>{/if}
+                  {/if}
                 </div>
                 <div class="right">
-                  <span class="dur">{fmtDuration(s.duration_ms)}</span>
+                  {#if !s.unreadable}<span class="dur">{fmtDuration(s.duration_ms)}</span>{/if}
                 </div>
               </div>
             </button>
@@ -91,46 +217,119 @@
 
     <!-- detail pane -->
     <div class="detail rise r3">
-      {#if $selectedSession}
+      {#if $selectedSession?.unreadable}
         {@const sel = $selectedSession}
+        <div class="detail-empty">
+          <div class="de-warn">⚠</div>
+          <div class="de-title">Unreadable session</div>
+          <p>This session's <code>metadata.json</code> couldn't be parsed. Its folder is named <code>{sel.id}</code>.</p>
+          <div class="de-actions">
+            <button class="btn" onclick={reveal}>Reveal in Finder</button>
+            <button class="btn btn-danger" onclick={() => (confirmKind = "delete")}>Delete</button>
+          </div>
+        </div>
+      {:else if detailState === "loading" || detailState === "idle" && $selectedSessionId}
+        <div class="center"><div class="spinner" aria-hidden="true"></div><div class="c-sub">Loading…</div></div>
+      {:else if detailState === "error"}
+        <div class="detail-empty">
+          <div class="de-title">Couldn't load this session</div>
+          <p class="c-err">{detailErr}</p>
+          <button class="btn" onclick={() => $selectedSessionId && loadDetail($selectedSessionId)}>Retry</button>
+        </div>
+      {:else if detailState === "loaded" && detail}
+        {@const a = detail.analysis}
         <div class="scroll">
           <div class="d-head">
             <div>
-              <div class="d-title">{sel.name ?? "Untitled session"}</div>
+              <div class="d-title">{detail.meta.name ?? "Untitled session"}</div>
               <div class="d-meta">
-                <span>📅 <b>{longDate(sel.date)}</b></span>
-                <span>⏱ <b>{fmtDuration(sel.duration_ms)}</b></span>
-                <span>◈ <b>${sel.total_api_cost.toFixed(2)}</b></span>
+                <span>📅 <b>{longDate(detail.meta.date)}</b></span>
+                <span>⏱ <b>{fmtDuration(detail.meta.duration_ms)}</b></span>
+                <span>◈ <b>${detail.meta.total_api_cost.toFixed(2)}</b></span>
               </div>
             </div>
-            <button class="btn">
-              <svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8" /><path d="M21 3v5h-5" /></svg>Re-analyze
-            </button>
-          </div>
-
-          <div class="sec">
-            <div class="sec-h"><div class="eyebrow">Summary</div></div>
-            <div class="card summary">
-              Discussed <b>CBUAE Phase 2</b> timeline — the central bank extended the deadline to
-              <b>Aug 2026</b>. KYC module certification is the critical dependency. Ahmed expects
-              auditor results by <b>Apr 15</b>. A budget revision is needed for Q3 planning.
+            <div class="d-actions">
+              {#if a}
+                <button class="btn" onclick={() => (confirmKind = "reanalyze")}>
+                  <svg class="icon" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8" /><path d="M21 3v5h-5" /></svg>Re-analyze
+                </button>
+              {/if}
+              <button class="btn btn-danger" aria-label="Delete session" onclick={() => (confirmKind = "delete")}>
+                <svg class="icon" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
+              </button>
             </div>
           </div>
 
-          <div class="sec">
-            <div class="sec-h"><div class="eyebrow">Actions · 3 of 4 open</div></div>
-            <div class="act"><span class="st st-done"></span><div class="body"><div class="t">Send CBUAE Phase 2 timeline to board</div><div class="sub">Me · due Apr 5 · done Apr 4</div></div><span class="tag tag-done">Done</span></div>
-            <div class="act"><span class="st st-pend"></span><div class="body"><div class="t">Review KYC audit results</div><div class="sub">Me · due Apr 15</div></div><span class="tag tag-pend">Pending</span></div>
-            <div class="act"><span class="st st-late"></span><div class="body"><div class="t">Send revised cost estimates</div><div class="sub">Ahmed · due Apr 8 · 2 days late</div></div><span class="tag tag-late">Late</span></div>
-          </div>
+          {#if detail.meta.status === "reviewing"}
+            <div class="review-note">
+              <span>This analysis is a draft awaiting review.</span>
+              <button class="btn btn-gold sm" onclick={() => goAnalyze("resume")}>Resume review</button>
+            </div>
+          {/if}
+
+          {#if !a}
+            <div class="none-an">
+              <p>This session hasn't been analyzed yet.</p>
+              <button class="btn btn-gold" onclick={() => goAnalyze("reanalyze")}>Analyze now</button>
+            </div>
+          {:else}
+            <div class="sec">
+              <div class="sec-h"><div class="eyebrow">Summary</div></div>
+              <div class="card summary">{a.summary || "No summary."}</div>
+            </div>
+
+            <div class="sec">
+              <div class="sec-h"><div class="eyebrow">Actions · {openCount} of {a.actions.length} open</div></div>
+              {#if a.actions.length === 0}
+                <div class="none">No actions were extracted.</div>
+              {:else}
+                {#each a.actions as act (act.id)}
+                  <div class="act">
+                    <div class="body">
+                      <div class="t">{act.title}</div>
+                      <div class="sub">{actionSub(act)}</div>
+                      {#if act.transcript_quote}<div class="quote">“{act.transcript_quote}”</div>{/if}
+                    </div>
+                    <StatusPill status={act.status} onChange={(s) => setStatus(act.id, s)} />
+                  </div>
+                {/each}
+              {/if}
+            </div>
+
+            {#if a.decisions.length}
+              <div class="sec">
+                <div class="sec-h"><div class="eyebrow">Decisions</div></div>
+                <div class="card decisions">
+                  <ul>{#each a.decisions as d}<li>{d}</li>{/each}</ul>
+                </div>
+              </div>
+            {/if}
+          {/if}
 
           <div class="sec">
-            <div class="sec-h"><div class="eyebrow">Transcript</div><button class="mini" onclick={() => navigate("live")}>Open playback</button></div>
-            <div class="card" style="padding:8px 18px">
-              <div class="tline"><div class="ts">00:00:05</div><div><div class="sp">You</div><div class="tx">Thanks everyone for joining. Let's nail down the CBUAE submission timeline today.</div></div></div>
-              <hr class="divider" />
-              <div class="tline"><div class="ts">00:03:28</div><div><div class="sp">Sarah</div><div class="tx">The central bank pushed their deadline to August — but there's a hard dependency on the KYC module being certified first.</div></div></div>
+            <div class="sec-h">
+              <div class="eyebrow">Transcript · {detail.transcript.length} lines</div>
+              {#if detail.transcript.length}
+                <button class="mini" onclick={() => (showTranscript = !showTranscript)}>
+                  {showTranscript ? "Hide" : "Show"} transcript
+                </button>
+              {/if}
             </div>
+            {#if showTranscript}
+              <div class="card" style="padding:8px 18px">
+                {#if detail.transcript.length === 0}
+                  <div class="none">No transcript.</div>
+                {:else}
+                  {#each detail.transcript as e, i (e.id)}
+                    {#if i > 0}<hr class="divider" />{/if}
+                    <div class="tline">
+                      <div class="ts">{clock(e.t_ms)}</div>
+                      <div><div class="sp">{e.stream === "you" ? "You" : "Remote"}</div><div class="tx">{e.text}</div></div>
+                    </div>
+                  {/each}
+                {/if}
+              </div>
+            {/if}
           </div>
         </div>
       {:else}
@@ -143,6 +342,29 @@
     </div>
   </div>
 </section>
+
+{#if confirmKind === "reanalyze"}
+  <ConfirmDialog
+    title="Re-analyze this session?"
+    message="Re-runs Sonnet extraction and overwrites the saved analysis. This bills one API call."
+    confirmLabel="Re-analyze"
+    onConfirm={() => goAnalyze("reanalyze")}
+    onCancel={() => (confirmKind = null)}
+  />
+{:else if confirmKind === "delete"}
+  <ConfirmDialog
+    title="Delete this session?"
+    message="Permanently removes the recording, transcript, and analysis. This cannot be undone."
+    confirmLabel="Delete"
+    destructive
+    onConfirm={doDelete}
+    onCancel={() => (confirmKind = null)}
+  />
+{/if}
+
+{#if showLabels}
+  <LabelManager onClose={() => (showLabels = false)} />
+{/if}
 
 <style>
   .topbar{flex:none;height:60px;display:flex;align-items:center;gap:14px;padding:0 18px;border-bottom:1px solid var(--line-soft)}
@@ -158,20 +380,27 @@
 
   .split{flex:1;display:flex;overflow:hidden}
   .list-pane{width:392px;flex:none;border-right:1px solid var(--line-soft);display:flex;flex-direction:column}
-  .list-head{flex:none;display:flex;align-items:center;justify-content:space-between;padding:16px 18px 10px}
-  .seg{display:flex;gap:2px;background:var(--bg-2);border:1px solid var(--line);border-radius:8px;padding:3px}
-  .seg button{font-family:var(--f-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);background:transparent;border:0;padding:4px 9px;border-radius:5px;cursor:pointer;transition:.15s}
-  .seg button.on{background:var(--bg-3);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.3)}
-  .list{flex:1;padding:4px 10px 14px}
+  .list-head{flex:none;display:flex;align-items:center;justify-content:space-between;padding:16px 18px 8px}
+  .manage{font-family:var(--f-mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);background:transparent;border:0;cursor:pointer;padding:4px 6px;border-radius:5px}
+  .manage:hover{color:var(--ink);background:var(--bg-2)}
+  .filter-row{flex:none;display:flex;gap:6px;flex-wrap:wrap;padding:0 18px 12px;border-bottom:1px solid var(--line-soft)}
+  .fchip{display:inline-flex;align-items:center;background:var(--bg-2);border:1px solid var(--line);border-radius:7px;padding:4px 8px;cursor:pointer;font-family:var(--f-mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);transition:.15s}
+  .fchip.on{border-color:var(--gold-line);background:var(--bg-sel);color:var(--ink)}
+  .fchip:hover{color:var(--ink)}
+
+  .list{flex:1;padding:8px 10px 14px}
   .s-row{display:block;width:100%;text-align:left;padding:13px 14px;border-radius:11px;cursor:pointer;position:relative;transition:.16s var(--ease);border:1px solid transparent;background:transparent;font-family:var(--f-ui);color:var(--ink)}
   .s-row:hover{background:var(--bg-2)}
   .s-row.sel{background:var(--bg-sel);border-color:var(--gold-line)}
   .s-row.sel::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:3px;background:var(--gold);box-shadow:0 0 12px var(--gold)}
+  .s-row.bad .name{color:var(--late)}
   .s-row .top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:7px}
   .s-row .name{font-weight:600;font-size:14px;letter-spacing:-.01em}
   .s-row .date{font-family:var(--f-mono);font-size:10.5px;color:var(--ink-3);flex:none}
   .s-row .meta{display:flex;align-items:center;gap:8px}
-  .labels{display:flex;gap:5px}
+  .labels{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+  .bad-id{font-family:var(--f-mono);font-size:10px;color:var(--ink-4)}
+  .badge-review{font-family:var(--f-mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--pend);background:rgba(231,178,76,.1);padding:2px 6px;border-radius:4px}
   .s-row .right{margin-left:auto;display:flex;align-items:center;gap:6px;font-family:var(--f-mono);font-size:10.5px;color:var(--ink-3)}
   .dur{font-family:var(--f-mono);font-size:10.5px;color:var(--ink-4)}
 
@@ -186,24 +415,28 @@
   .d-meta{display:flex;gap:14px;margin-top:11px;font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3)}
   .d-meta span{display:flex;align-items:center;gap:6px}
   .d-meta b{color:var(--ink-2);font-weight:500}
+  .d-actions{display:flex;gap:8px;flex:none}
+  .btn-danger{background:rgba(255,107,92,.1);border:1px solid rgba(255,107,92,.32);color:#ff8278}
+  .btn-danger:hover{background:rgba(255,107,92,.2)}
+
+  .review-note{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:22px;padding:12px 16px;border-radius:var(--r-m);background:rgba(231,178,76,.08);border:1px solid var(--gold-line);font-size:13px;color:var(--ink-2)}
+  .sm{padding:6px 12px;font-size:12px}
+  .none-an{margin-top:30px;padding:30px;text-align:center;border:1px dashed var(--line);border-radius:var(--r-m);color:var(--ink-3)}
+  .none-an p{margin-bottom:14px;font-size:13.5px}
+
   .sec{margin-top:30px}
   .sec-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
   .card{background:var(--bg-2);border:1px solid var(--line-soft);border-radius:var(--r-m);padding:17px 18px}
-  .summary{font-size:14px;line-height:1.68;color:var(--ink-2)}
-  .summary :global(b){color:var(--ink);font-weight:600}
+  .summary{font-size:14px;line-height:1.68;color:var(--ink-2);white-space:pre-wrap}
+  .decisions ul{margin:0;padding-left:18px}
+  .decisions li{font-size:13.5px;line-height:1.7;color:var(--ink-2)}
+  .none{font-size:13px;color:var(--ink-3);padding:6px 2px}
   .act{display:flex;align-items:center;gap:13px;padding:13px 15px;border-radius:var(--r-m);border:1px solid var(--line-soft);background:var(--bg-2);margin-bottom:9px;transition:.16s}
   .act:hover{border-color:var(--line);background:var(--bg-3)}
-  .st{width:9px;height:9px;border-radius:50%;flex:none}
-  .st-done{background:var(--done);box-shadow:0 0 9px rgba(138,196,121,.5)}
-  .st-pend{background:var(--pend);box-shadow:0 0 9px rgba(231,178,76,.4)}
-  .st-late{background:var(--late);box-shadow:0 0 9px rgba(255,107,92,.5)}
   .act .body{flex:1;min-width:0}
   .act .t{font-size:13.5px;font-weight:500;margin-bottom:3px}
   .act .sub{font-family:var(--f-mono);font-size:10.5px;color:var(--ink-3)}
-  .act .tag{font-family:var(--f-mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;padding:3px 8px;border-radius:5px;font-weight:600;flex:none}
-  .tag-done{color:var(--done);background:rgba(138,196,121,.1)}
-  .tag-pend{color:var(--pend);background:rgba(231,178,76,.1)}
-  .tag-late{color:var(--late);background:rgba(255,107,92,.12)}
+  .act .quote{font-size:12px;color:var(--ink-3);font-style:italic;margin-top:5px;line-height:1.5}
   .mini{font-family:var(--f-mono);font-size:11px;color:var(--ink-3);background:var(--bg-3);border:1px solid var(--line);border-radius:6px;padding:4px 9px;display:flex;align-items:center;gap:5px;cursor:pointer}
   .mini:hover{color:var(--ink-2)}
   .tline{display:flex;gap:14px;padding:9px 0}
@@ -211,7 +444,16 @@
   .tline .tx{font-size:13px;line-height:1.6;color:var(--ink-2)}
   .tline .sp{font-family:var(--f-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:3px}
 
+  .center{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--ink-3)}
+  .spinner{width:30px;height:30px;border:3px solid var(--line);border-top-color:var(--gold);border-radius:50%;animation:spin .9s linear infinite}
+  .c-sub{font-family:var(--f-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase}
+  .c-err{font-size:12.5px;color:var(--late);line-height:1.5;max-width:360px;margin:0 auto 14px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
   .detail-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;color:var(--ink-3);padding:40px}
   .detail-empty .de-title{font-family:var(--f-disp);font-weight:600;font-size:22px;color:var(--ink-2)}
-  .detail-empty p{font-size:13px;line-height:1.6;max-width:300px}
+  .detail-empty p{font-size:13px;line-height:1.6;max-width:340px}
+  .detail-empty code{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-2)}
+  .de-warn{font-size:32px}
+  .de-actions{display:flex;gap:10px;margin-top:6px}
 </style>

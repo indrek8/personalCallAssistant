@@ -15,10 +15,13 @@ import type {
   ChatTurn,
   CostUpdateEvent,
   Finding,
+  LabelRef,
   ModelDownloadProgress,
   Mode,
+  PostMode,
   SessionMeta,
   Settings,
+  Toast,
   Toggles,
   TranscriptEntry,
   TranscriptEntryEvent,
@@ -27,6 +30,7 @@ import type {
 import {
   getSettings as ipcGetSettings,
   listSessions as ipcListSessions,
+  listLabels as ipcListLabels,
   listAudioInputDevices as ipcListDevices,
   isTauri,
   listen,
@@ -96,6 +100,60 @@ export const postSessionId = writable<string | null>(null);
 /** Post-analysis lifecycle, drives the Post screen's spinner/error/review states. */
 export const analysisPhase = writable<"idle" | "analyzing" | "reviewing" | "error">("idle");
 
+/** How the Post screen was entered — set by the caller before navigate("post") (M5). */
+export const postMode = writable<PostMode>("fresh");
+
+// ---- Manage stores (M5) ----------------------------------------------------
+
+/** The global label registry (labels.json), loaded on boot + after edits. */
+export const labels = writable<LabelRef[]>([]);
+
+/** Transient toast notifications. Sticky ones persist until dismissed. */
+export const toasts = writable<Toast[]>([]);
+
+let toastSeq = 0;
+
+/** Push a toast; returns its id. Non-sticky toasts auto-dismiss after ~6s. */
+export function pushToast(
+  message: string,
+  opts: { kind?: Toast["kind"]; code?: string; sticky?: boolean; action?: Toast["action"] } = {},
+): string {
+  const id = `t${++toastSeq}`;
+  const toast: Toast = {
+    id,
+    kind: opts.kind ?? "info",
+    message,
+    code: opts.code,
+    sticky: opts.sticky ?? false,
+    action: opts.action,
+  };
+  toasts.update((list) => [...list, toast]);
+  if (!toast.sticky) setTimeout(() => dismissToast(id), 6000);
+  return id;
+}
+
+/** Remove a toast by id. */
+export function dismissToast(id: string): void {
+  toasts.update((list) => list.filter((t) => t.id !== id));
+}
+
+/** Resolve a session's embedded label ref against the registry (by id), falling
+ * back to the embedded snapshot — so a rename/recolor reflects everywhere while a
+ * deleted label still renders from the session's own copy (D24). */
+export function resolveLabel(ref: LabelRef, registry: LabelRef[]): LabelRef {
+  return registry.find((l) => l.id === ref.id) ?? ref;
+}
+
+/** Reload the global label registry (list_labels). */
+export async function refreshLabels(): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    labels.set(await ipcListLabels());
+  } catch (e) {
+    pushToast(`Could not load labels: ${String(e)}`, { kind: "error" });
+  }
+}
+
 /** Reset the live stores for a new capture session. */
 export function startLive(sessionId: string, initialToggles: Toggles): void {
   liveSessionId.set(sessionId);
@@ -164,11 +222,34 @@ export async function setupEventListeners(): Promise<void> {
     modelDownload.set(e.payload.pct >= 100 ? null : e.payload);
   });
   await listen<AppErrorEvent>("app-error", (e) => {
-    banner.set(`${e.payload.code}: ${e.payload.message}`);
+    pushToast(e.payload.message, {
+      kind: "error",
+      code: e.payload.code,
+      sticky: !e.payload.recoverable,
+    });
   });
-  await listen<{ session_id: string }>("session-recovered", () => {
-    banner.set("Recovered a session that was interrupted — it's been saved to your list.");
-    void refreshSessions();
+  await listen<{ session_id: string }>("session-recovered", async (e) => {
+    // A crashed `reviewing` session is offered for resume (recover-into-review,
+    // D23); anything else recovered transcript-only just gets an info toast.
+    const id = e.payload.session_id;
+    await refreshSessions();
+    const sess = get(sessions).find((s) => s.id === id);
+    if (sess?.status === "reviewing") {
+      pushToast("Recovered a session mid-review.", {
+        kind: "info",
+        sticky: true,
+        action: {
+          label: "Resume review",
+          run: () => {
+            postMode.set("resume");
+            postSessionId.set(id);
+            navigate("post");
+          },
+        },
+      });
+    } else {
+      pushToast("Recovered an interrupted session — saved to your list.", { kind: "info" });
+    }
   });
 }
 
@@ -200,6 +281,7 @@ export async function boot(): Promise<void> {
   // Fire-and-forget refreshes; failures surface in the banner but don't block.
   void refreshSessions();
   void refreshDevices();
+  void refreshLabels();
 }
 
 /** Reload the dashboard list from disk (list_sessions). */

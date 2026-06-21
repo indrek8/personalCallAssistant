@@ -18,6 +18,7 @@ import type {
   Finding,
   Analysis,
   ActionStatus,
+  LabelRef,
 } from "./types";
 
 /** Re-exported so stores can subscribe to backend events in one place. */
@@ -152,4 +153,36 @@ export function updateActionStatus(
   status: ActionStatus,
 ): Promise<void> {
   return invoke<void>("update_action_status", { sessionId, actionId, status });
+}
+
+// ---- M5 manage: delete, reveal, labels -------------------------------------
+
+/** delete_session({ id }) -> (). Removes the session directory + all artifacts. */
+export function deleteSession(id: string): Promise<void> {
+  return invoke<void>("delete_session", { id });
+}
+
+/** reveal_in_finder({ path? }) -> (). Opens path (or the storage dir) in Finder. */
+export function revealInFinder(path?: string): Promise<void> {
+  return invoke<void>("reveal_in_finder", { path: path ?? null });
+}
+
+/** list_labels() -> LabelRef[] — the global label registry (labels.json). */
+export function listLabels(): Promise<LabelRef[]> {
+  return invoke<LabelRef[]>("list_labels");
+}
+
+/** create_label({ name, color? }) -> LabelRef. Idempotent by name (case-insensitive). */
+export function createLabel(name: string, color?: string): Promise<LabelRef> {
+  return invoke<LabelRef>("create_label", { name, color: color ?? null });
+}
+
+/** update_label({ id, name?, color? }) -> (). Rename/recolor a registry entry. */
+export function updateLabel(id: string, name?: string, color?: string): Promise<void> {
+  return invoke<void>("update_label", { id, name: name ?? null, color: color ?? null });
+}
+
+/** delete_label({ id }) -> (). Removes the label from the registry (sessions keep their tag). */
+export function deleteLabel(id: string): Promise<void> {
+  return invoke<void>("delete_label", { id });
 }

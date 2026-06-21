@@ -10,6 +10,7 @@
   import Live from "$lib/screens/Live.svelte";
   import Post from "$lib/screens/Post.svelte";
   import Settings from "$lib/screens/Settings.svelte";
+  import Toasts from "$lib/components/Toasts.svelte";
 
   onMount(() => {
     // In a plain-browser preview (no Tauri), seed sample data so the dashboard
@@ -49,6 +50,8 @@
       <Settings />
     {/if}
   </div>
+
+  <Toasts />
 </div>
 
 <style>

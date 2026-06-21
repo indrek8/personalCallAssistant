@@ -164,7 +164,7 @@ The complete frontend↔Rust surface. Frontend calls **commands**; Rust pushes *
 | `save_settings` | `Settings` | `()` | |
 | `test_api_key` | `{key}` | `{ok, model, error?}` | 1-token ping |
 | `list_audio_input_devices` | — | `AudioDevice[]` | id, name, is_default |
-| `set_capture_device` | `{device_id}` | `()` | |
+| `set_capture_device` | `{device_id}` | `()` | **folded into `save_settings`** (M5, D26) |
 | `list_models` / `get_model_status` | `{name?}` | `ModelStatus[]` | downloaded? size |
 | `download_model` | `{name}` | `()` | progress via events |
 | `list_sessions` | — | `SessionMeta[]` | dashboard list |
@@ -179,8 +179,12 @@ The complete frontend↔Rust surface. Frontend calls **commands**; Rust pushes *
 | `run_post_analysis` | `{session_id}` | `()` | progress via events |
 | `save_analysis` | `{session_id, analysis}` | `()` | → completed |
 | `update_action_status` | `{session_id, action_id, status}` | `()` | patches analysis.json |
-| `delete_session` | `{id}` | `()` | |
-| `reveal_in_finder` | `{path}` | `()` | |
+| `delete_session` | `{id}` | `()` | removes the session dir + artifacts (M5) |
+| `reveal_in_finder` | `{path?}` | `()` | opener plugin; dir when omitted (M5) |
+| `list_labels` | — | `LabelRef[]` | global `labels.json` registry (M5) |
+| `create_label` | `{name, color?}` | `LabelRef` | idempotent by name (M5) |
+| `update_label` | `{id, name?, color?}` | `()` | rename / recolor (M5) |
+| `delete_label` | `{id}` | `()` | registry-only; sessions keep snapshots (M5) |
 
 ### Events (Rust → frontend, `emit`)
 
@@ -235,7 +239,8 @@ sessions/{uuid}/
 
 - **`action`** (in `analysis.json`): `{id, title, owner, owner_type, type, status, deadline?, transcript_quote, transcript_t_ms, notes?, created_by, completed_at?}`.
 - **Incremental append strategy:** `transcript.jsonl`/`ai_live.json` are written as JSON arrays via append-friendly rewrite (or JSONL internally, serialized to JSON on read) so the latest state survives a crash.
-- **Recovery scan (boot):** find sessions with `status ∈ {recording,paused,ending,analyzing}` → mark `recovering`, rebuild from `transcript.jsonl`/`audio.wav`, route to POST_PROCESS, emit `session-recovered` (EXC-CRASH).
+- **Recovery scan (boot):** stale sessions (`recording`/`paused`/`ending`/`analyzing`, or a `draft` with a real WAV) finalize to `completed` transcript-only; a crashed **`reviewing`** session **stays `reviewing`** with its draft and reopens in review via an actionable toast (M5, D23). Each emits `session-recovered` (EXC-CRASH).
+- **Labels (M5):** `labels.json` is a global `Vec<LabelRef>` registry; sessions embed `LabelRef` snapshots and the dashboard resolves id→name/color from the registry (D24). A session whose `metadata.json` won't parse surfaces as an `unreadable` placeholder row instead of being skipped (EXC-CORRUPT, D25).
 - **Forward-compatibility:** every entity has a stable `id`; storage stays normalized enough that v1's projects + global-actions view is an additive migration (see [../roadmap.md](../roadmap.md)).
 
 ---

@@ -1,13 +1,9 @@
 //! The Tauri IPC command surface (technical-design.md §7).
 //!
-//! M1 implements the real commands needed for the walking skeleton:
-//!   - `list_audio_input_devices` (real, via cpal)
-//!   - `get_settings` / `save_settings`
-//!   - `create_session` / `list_sessions` / `get_session`
-//!
-//! Every other §7 command is registered with its exact name but returns an
-//! `AppError::NotImplemented` so the IPC contract is fully present and the
-//! frontend can wire against it now.
+//! Every §7 command is implemented as of M5 — capture/STT/AI (M1–M4) plus the
+//! manage layer (`delete_session`, `reveal_in_finder`, the `*_label` registry).
+//! `set_capture_device` is intentionally folded into `save_settings` (D26), which
+//! already persists `capture_device_id`.
 //!
 //! Command names here MUST match §7 exactly — they are the integration contract.
 
@@ -16,6 +12,7 @@ use serde::Serialize;
 use serde_json::json;
 use std::thread;
 use tauri::{AppHandle, State};
+use tauri_plugin_opener::OpenerExt;
 use uuid::Uuid;
 
 use crate::ai::ClaudeClient;
@@ -25,7 +22,8 @@ use crate::error::{AppError, AppResult};
 use crate::events;
 use crate::session::manager::{self, AppState};
 use crate::session::model::{
-    ActionStatus, Analysis, CreatedSession, SessionDraft, SessionFull, SessionMeta, SessionStatus,
+    ActionStatus, Analysis, CreatedSession, LabelRef, SessionDraft, SessionFull, SessionMeta,
+    SessionStatus,
 };
 use crate::stt::model_mgr::{self, ModelStatus};
 use crate::storage::{self, schema::{Settings, Toggles}};
@@ -71,14 +69,6 @@ pub fn list_sessions() -> AppResult<Vec<SessionMeta>> {
 #[tauri::command]
 pub fn get_session(id: String) -> AppResult<SessionFull> {
     storage::get_session(&id)
-}
-
-// ----------------------------------------------------------------------------
-// M1 stubs — registered, named per §7, not implemented yet
-// ----------------------------------------------------------------------------
-
-fn not_impl(name: &str) -> AppError {
-    AppError::NotImplemented(name.to_string())
 }
 
 // ----------------------------------------------------------------------------
@@ -382,11 +372,14 @@ pub fn save_action(state: State<'_, AppState>, finding: serde_json::Value) -> Ap
 /// finished transcript on a blocking thread, writes the draft `analysis.json`
 /// (status → `reviewing`), and drives `analysis-progress`. The review screen
 /// re-fetches the draft via `get_session` (D18); cost is billed inside
-/// `analyze::run` (D-cost). On failure the session is reset to `ending` so a later
-/// quit recovers cleanly, and the error surfaces for the Retry / Save-without
-/// choice (EXC-API-POST).
+/// `analyze::run` (D-cost). On failure the session is restored to its **prior**
+/// status (D21/M5) — `ending` for a fresh post-capture run, or `completed` for a
+/// Re-analyze (whose existing `analysis.json` is untouched, since we only overwrite
+/// on success) — and the error surfaces for the Retry / Save-without choice
+/// (EXC-API-POST).
 #[tauri::command]
 pub async fn run_post_analysis(app: AppHandle, session_id: String) -> AppResult<()> {
+    let prior = storage::get_session_meta(&session_id)?.status;
     storage::set_session_status(&session_id, SessionStatus::Analyzing)?;
     events::emit(&app, events::ANALYSIS_PROGRESS, json!({ "phase": "analyzing" }));
 
@@ -404,9 +397,10 @@ pub async fn run_post_analysis(app: AppHandle, session_id: String) -> AppResult<
             Ok(())
         }
         Err(e) => {
-            // Never leave the session stuck `analyzing` — reset so a later quit
-            // recovers transcript-only and the UI can offer Retry / Save-without.
-            let _ = storage::set_session_status(&session_id, SessionStatus::Ending);
+            // Never leave the session stuck `analyzing` — restore its prior status so
+            // a fresh run recovers transcript-only and a failed Re-analyze keeps the
+            // session `completed` with its existing analysis intact (D21).
+            let _ = storage::set_session_status(&session_id, prior);
             Err(e)
         }
     }
@@ -462,10 +456,128 @@ fn patch_action_status(
     Ok(())
 }
 
-/// `delete_session({ id })` → `()` (M5).
+/// `delete_session({ id })` → `()` (M5). Permanently removes the session directory
+/// and every artifact under it. Used by the dashboard Delete and the Post Discard.
 #[tauri::command]
-pub fn delete_session(_id: String) -> AppResult<()> {
-    Err(not_impl("delete_session"))
+pub fn delete_session(id: String) -> AppResult<()> {
+    storage::delete_session(&id)
+}
+
+/// `reveal_in_finder({ path? })` → `()` (M5). Opens `path` (or the storage base
+/// directory when omitted) in the system file browser via the opener plugin.
+#[tauri::command]
+pub fn reveal_in_finder(app: AppHandle, path: Option<String>) -> AppResult<()> {
+    let target = match path {
+        Some(p) => p,
+        None => storage::base_dir()?.to_string_lossy().into_owned(),
+    };
+    app.opener()
+        .open_path(target, None::<&str>)
+        .map_err(|e| AppError::Storage(format!("could not reveal in Finder: {e}")))
+}
+
+// ----------------------------------------------------------------------------
+// M5 — global label registry (labels.json)
+// ----------------------------------------------------------------------------
+
+/// `list_labels()` → the global label set (M5).
+#[tauri::command]
+pub fn list_labels() -> AppResult<Vec<LabelRef>> {
+    storage::read_labels()
+}
+
+/// `create_label({ name, color? })` → the created `LabelRef`. Appends to the global
+/// registry with a fresh uuid + a palette-cycled color when none is given. A
+/// case-insensitive duplicate name returns the existing label rather than a second
+/// row, so create-on-type in New Session is idempotent (M5).
+#[tauri::command]
+pub fn create_label(name: String, color: Option<String>) -> AppResult<LabelRef> {
+    let mut labels = storage::read_labels()?;
+    let label = upsert_label(&mut labels, &name, color)?;
+    storage::write_labels(&labels)?;
+    Ok(label)
+}
+
+/// `update_label({ id, name?, color? })` → `()` (M5). Renames/recolors a registry
+/// entry; the dashboard resolves session label refs against the registry, so the
+/// change reflects everywhere. Unknown id → `NotFound`.
+#[tauri::command]
+pub fn update_label(id: String, name: Option<String>, color: Option<String>) -> AppResult<()> {
+    let mut labels = storage::read_labels()?;
+    apply_label_update(&mut labels, &id, name, color)?;
+    storage::write_labels(&labels)
+}
+
+/// `delete_label({ id })` → `()` (M5). Removes the label from the global registry;
+/// sessions keep their embedded `LabelRef` snapshot so historical tags still render
+/// (registry-only delete, D24). Unknown id → `NotFound`.
+#[tauri::command]
+pub fn delete_label(id: String) -> AppResult<()> {
+    let mut labels = storage::read_labels()?;
+    remove_label(&mut labels, &id)?;
+    storage::write_labels(&labels)
+}
+
+// The registry transforms are pure over the in-memory `Vec<LabelRef>` so they're
+// unit-testable without touching the real `labels.json` (mirrors M4's
+// `patch_action_status`); the commands wrap them with read → transform → write.
+
+/// Return an existing case-insensitive name match, else append a fresh label
+/// (uuid + palette-cycled default color). Empty name → error.
+fn upsert_label(labels: &mut Vec<LabelRef>, name: &str, color: Option<String>) -> AppResult<LabelRef> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Err(AppError::Serialization("label name is empty".into()));
+    }
+    if let Some(existing) = labels.iter().find(|l| l.name.eq_ignore_ascii_case(&name)) {
+        return Ok(existing.clone());
+    }
+    let label = LabelRef {
+        id: Uuid::new_v4().to_string(),
+        name,
+        color: Some(color.unwrap_or_else(|| next_label_color(labels.len()))),
+    };
+    labels.push(label.clone());
+    Ok(label)
+}
+
+/// Rename/recolor a registry entry by id (empty/absent fields left unchanged).
+fn apply_label_update(
+    labels: &mut [LabelRef],
+    id: &str,
+    name: Option<String>,
+    color: Option<String>,
+) -> AppResult<()> {
+    let label = labels
+        .iter_mut()
+        .find(|l| l.id == id)
+        .ok_or_else(|| AppError::NotFound(format!("label {id}")))?;
+    if let Some(name) = name {
+        let name = name.trim();
+        if !name.is_empty() {
+            label.name = name.to_string();
+        }
+    }
+    if let Some(color) = color {
+        label.color = Some(color);
+    }
+    Ok(())
+}
+
+/// Remove a registry entry by id; unknown id → `NotFound`.
+fn remove_label(labels: &mut Vec<LabelRef>, id: &str) -> AppResult<()> {
+    let before = labels.len();
+    labels.retain(|l| l.id != id);
+    if labels.len() == before {
+        return Err(AppError::NotFound(format!("label {id}")));
+    }
+    Ok(())
+}
+
+/// A default color for a new label, cycled through a small palette by current count.
+fn next_label_color(count: usize) -> String {
+    const PALETTE: [&str; 6] = ["#d4a843", "#6fae7f", "#5c8fd6", "#b07ad6", "#d67a9c", "#5cc0bd"];
+    PALETTE[count % PALETTE.len()].to_string()
 }
 
 #[cfg(test)]
@@ -509,5 +621,74 @@ mod tests {
             patch_action_status(&mut a, "nope", ActionStatus::Done),
             Err(AppError::NotFound(_))
         ));
+    }
+
+    #[test]
+    fn upsert_label_creates_then_dedupes_by_name() {
+        let mut labels: Vec<LabelRef> = vec![];
+        let a = upsert_label(&mut labels, "  Acme  ", None).unwrap();
+        assert_eq!(a.name, "Acme", "name is trimmed");
+        assert!(a.color.is_some(), "a default color is assigned");
+        assert_eq!(labels.len(), 1);
+        // A case-insensitive duplicate returns the existing row, no second entry.
+        let again = upsert_label(&mut labels, "acme", Some("#fff".into())).unwrap();
+        assert_eq!(again.id, a.id);
+        assert_eq!(labels.len(), 1);
+        // A distinct name appends.
+        upsert_label(&mut labels, "Globex", None).unwrap();
+        assert_eq!(labels.len(), 2);
+        // Empty name is rejected.
+        assert!(matches!(
+            upsert_label(&mut labels, "   ", None),
+            Err(AppError::Serialization(_))
+        ));
+    }
+
+    #[test]
+    fn apply_label_update_renames_recolors_and_reports_unknown() {
+        let mut labels = vec![LabelRef { id: "a".into(), name: "Acme".into(), color: None }];
+        apply_label_update(&mut labels, "a", Some("Acme Corp".into()), Some("#123456".into())).unwrap();
+        assert_eq!(labels[0].name, "Acme Corp");
+        assert_eq!(labels[0].color.as_deref(), Some("#123456"));
+        // An empty rename is ignored (keeps the prior name).
+        apply_label_update(&mut labels, "a", Some("  ".into()), None).unwrap();
+        assert_eq!(labels[0].name, "Acme Corp");
+        assert!(matches!(
+            apply_label_update(&mut labels, "nope", None, None),
+            Err(AppError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn remove_label_deletes_and_reports_unknown() {
+        let mut labels = vec![
+            LabelRef { id: "a".into(), name: "Acme".into(), color: None },
+            LabelRef { id: "g".into(), name: "Globex".into(), color: None },
+        ];
+        remove_label(&mut labels, "a").unwrap();
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].id, "g");
+        assert!(matches!(remove_label(&mut labels, "a"), Err(AppError::NotFound(_))));
+    }
+
+    #[test]
+    fn next_label_color_cycles_the_palette() {
+        assert_eq!(next_label_color(0), next_label_color(6), "wraps after 6");
+        assert_ne!(next_label_color(0), next_label_color(1));
+    }
+
+    #[test]
+    fn upsert_label_honors_an_explicit_color() {
+        let mut labels: Vec<LabelRef> = vec![];
+        let l = upsert_label(&mut labels, "Acme", Some("#abcdef".into())).unwrap();
+        assert_eq!(l.color.as_deref(), Some("#abcdef"), "explicit color wins over the palette");
+    }
+
+    #[test]
+    fn apply_label_update_color_only_keeps_the_name() {
+        let mut labels = vec![LabelRef { id: "a".into(), name: "Acme".into(), color: Some("#111".into()) }];
+        apply_label_update(&mut labels, "a", None, Some("#222".into())).unwrap();
+        assert_eq!(labels[0].name, "Acme", "name unchanged when only color is given");
+        assert_eq!(labels[0].color.as_deref(), Some("#222"));
     }
 }

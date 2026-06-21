@@ -60,12 +60,18 @@ pub fn run() {
             commands::set_toggles,
             // --- M3 live AI — save-action persistence (PR4) ---
             commands::save_action,
-            // --- M3/M4/M5 stubs (named per §7) ---
+            // --- M3 Ask-AI + M4 post-analysis ---
             commands::ask_ai,
             commands::run_post_analysis,
             commands::save_analysis,
             commands::update_action_status,
+            // --- M5 manage: delete, reveal, labels ---
             commands::delete_session,
+            commands::reveal_in_finder,
+            commands::list_labels,
+            commands::create_label,
+            commands::update_label,
+            commands::delete_label,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

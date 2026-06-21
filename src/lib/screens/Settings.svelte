@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { navigate, devices, settings, refreshDevices, banner, modelDownload } from "$lib/stores";
+  import { navigate, devices, settings, refreshDevices, banner, modelDownload, pushToast } from "$lib/stores";
   import {
     saveSettings,
     isTauri,
@@ -8,8 +8,10 @@
     testApiKey,
     saveApiKey,
     getApiKeyStatus,
+    revealInFinder,
   } from "$lib/ipc";
   import type { Settings as SettingsT, Toggles, ModelStatus } from "$lib/types";
+  import LabelManager from "$lib/components/LabelManager.svelte";
 
   type NavKey = "api" | "audio" | "transcription" | "storage";
   let section = $state<NavKey>("api");
@@ -18,6 +20,15 @@
   let testingKey = $state(false);
   let keyMsg = $state<{ ok: boolean; text: string } | null>(null);
   let keyPresent = $state(false);
+  let showLabels = $state(false);
+
+  async function reveal() {
+    try {
+      await revealInFinder();
+    } catch (e) {
+      pushToast(`Could not reveal in Finder: ${String(e)}`, { kind: "error" });
+    }
+  }
 
   // Working copy of settings (falls back to sensible defaults outside Tauri).
   const base: SettingsT = $settings ?? {
@@ -233,13 +244,24 @@
               <div class="sn">Data location</div>
               <div class="sd mono">{base.storage_path ?? "~/Library/Application Support/CallAssistant"}</div>
             </div>
-            <button class="btn">Reveal in Finder</button>
+            <button class="btn" onclick={reveal}>Reveal in Finder</button>
+          </div>
+          <div class="set-row">
+            <div class="si">
+              <div class="sn">Labels</div>
+              <div class="sd">Create, rename, recolor, or remove the labels you tag sessions with.</div>
+            </div>
+            <button class="btn" onclick={() => (showLabels = true)}>Manage labels</button>
           </div>
         </div>
       {/if}
     </div>
   </div>
 </section>
+
+{#if showLabels}
+  <LabelManager onClose={() => (showLabels = false)} />
+{/if}
 
 <style>
   .duo{flex:1;display:flex;overflow:hidden}

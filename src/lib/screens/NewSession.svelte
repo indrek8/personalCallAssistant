@@ -1,17 +1,44 @@
 <script lang="ts">
-  import { navigate, devices, settings, refreshSessions, refreshDevices, banner, startLive, modelDownload } from "$lib/stores";
-  import { createSession, isTauri, runPreflight, startCapture, saveSettings, downloadModel, setToggles } from "$lib/ipc";
+  import { navigate, devices, settings, refreshSessions, refreshDevices, banner, startLive, modelDownload, labels, refreshLabels, pushToast } from "$lib/stores";
+  import { createSession, createLabel, isTauri, runPreflight, startCapture, saveSettings, downloadModel, setToggles } from "$lib/ipc";
   import type { LabelRef, SessionDraft, Toggles, PreflightResult } from "$lib/types";
+  import LabelChip from "$lib/components/LabelChip.svelte";
 
-  let name = $state("Board Call Q2");
+  let name = $state("");
   let participants = $state("");
-  let context = $state(
-    `Follow-up to the Q1 board meeting.\n\nDiscussing CBUAE Phase 2 delays and the KYC module certification timeline. Central bank circular CB-2025-041 sets the Phase 2 deadline at Aug 2026.\n\nAhmed owes cost estimates from the last call. Sarah is tracking the KYC vendor relationship.`,
+  let context = $state("");
+  let selectedLabels = $state<LabelRef[]>([]);
+  let labelInput = $state("");
+
+  // Registry labels not already attached, filtered by what's being typed.
+  const labelSuggestions = $derived(
+    $labels.filter(
+      (l) =>
+        !selectedLabels.some((s) => s.id === l.id) &&
+        (!labelInput.trim() || l.name.toLowerCase().includes(labelInput.trim().toLowerCase())),
+    ),
   );
-  let labels = $state<LabelRef[]>([
-    { id: "acme", name: "Acme" },
-    { id: "board", name: "Board" },
-  ]);
+
+  function addLabel(l: LabelRef) {
+    if (!selectedLabels.some((s) => s.id === l.id)) selectedLabels = [...selectedLabels, l];
+    labelInput = "";
+  }
+  function removeLabel(id: string) {
+    selectedLabels = selectedLabels.filter((l) => l.id !== id);
+  }
+  async function addTypedLabel() {
+    const nm = labelInput.trim();
+    if (!nm) return;
+    const existing = $labels.find((l) => l.name.toLowerCase() === nm.toLowerCase());
+    if (existing) return addLabel(existing);
+    if (!isTauri()) return addLabel({ id: nm.toLowerCase(), name: nm, color: null });
+    try {
+      addLabel(await createLabel(nm));
+      await refreshLabels();
+    } catch (e) {
+      pushToast(`Could not create label: ${String(e)}`, { kind: "error" });
+    }
+  }
   let deviceId = $state<string>($settings?.capture_device_id ?? "");
   let starting = $state(false);
   let preflight = $state<PreflightResult | null>(null);
@@ -40,7 +67,7 @@
     try {
       const draft: SessionDraft = {
         name: name.trim() || null,
-        labels,
+        labels: selectedLabels,
         participants: participants
           .split(",")
           .map((p) => p.trim())
@@ -94,14 +121,6 @@
       banner.set(`Download failed: ${String(e)}`),
     );
   }
-
-  function labelClass(n: string) {
-    const x = n.toLowerCase();
-    if (x.includes("acme")) return "lbl-acme";
-    if (x.includes("globex")) return "lbl-globex";
-    if (x.includes("board")) return "lbl-int";
-    return "lbl-int";
-  }
 </script>
 
 <section class="screen">
@@ -117,17 +136,29 @@
       <div class="rail-body scroll">
         <div class="field">
           <label for="ns-name">Session name</label>
-          <input id="ns-name" class="inp" bind:value={name} />
+          <input id="ns-name" class="inp" placeholder="e.g. Board Call Q2" bind:value={name} />
         </div>
 
         <div class="field">
           <span class="field-label">Labels</span>
           <div class="chips-in">
-            {#each labels as l}
-              <span class="lbl {labelClass(l.name)}">{l.name}</span>
+            {#each selectedLabels as l (l.id)}
+              <LabelChip label={l} removable onRemove={() => removeLabel(l.id)} />
             {/each}
-            <button class="add" type="button">+ add</button>
+            <input
+              class="lbl-input"
+              placeholder="+ label"
+              bind:value={labelInput}
+              onkeydown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTypedLabel(); } }}
+            />
           </div>
+          {#if labelSuggestions.length}
+            <div class="lbl-suggest">
+              {#each labelSuggestions as l (l.id)}
+                <button type="button" class="sugg" onclick={() => addLabel(l)}><LabelChip label={l} /></button>
+              {/each}
+            </div>
+          {/if}
         </div>
 
         <div class="field">
@@ -204,7 +235,7 @@
         prior commitments, anything decided last time — the richer this is, the sharper the live
         analysis during your call.
       </div>
-      <textarea bind:value={context}></textarea>
+      <textarea bind:value={context} placeholder="Paste the agenda, key numbers, prior commitments — anything decided last time. The richer this is, the sharper the live analysis."></textarea>
     </div>
   </div>
 </section>
@@ -229,9 +260,12 @@
 
   .field-label{display:block;font-family:var(--f-mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-bottom:9px}
   .opt{color:var(--ink-4);text-transform:none;letter-spacing:0}
-  .chips-in{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:9px 11px}
-  .chips-in .lbl{padding:4px 10px;font-size:12px;display:flex;align-items:center;gap:6px}
-  .chips-in .add{font-family:var(--f-mono);font-size:11px;color:var(--ink-4);background:none;border:1px dashed var(--line);border-radius:6px;padding:4px 9px;cursor:pointer}
+  .chips-in{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--bg-2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;min-height:42px}
+  .lbl-input{flex:1;min-width:90px;background:none;border:0;outline:none;color:var(--ink);font-family:var(--f-ui);font-size:13px}
+  .lbl-input::placeholder{color:var(--ink-4)}
+  .lbl-suggest{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .sugg{background:none;border:0;padding:0;cursor:pointer;opacity:.75;transition:.15s}
+  .sugg:hover{opacity:1}
 
   .select-wrap{position:relative}
   .select-wrap select{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:36px}
