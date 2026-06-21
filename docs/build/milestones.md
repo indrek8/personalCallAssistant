@@ -103,7 +103,7 @@ M0 Spikes ─► M1 Skeleton ─► M2 Capture→Transcript ─► M3 Live AI �
 
 **Goal:** End → Sonnet extraction → review/edit → save.
 
-> **Status:** ✅ **Complete** (branch `feat/m4-post-analysis`) — End routes to a real Post screen that runs Sonnet structured extraction, merges live/saved commitments, and lets the user edit before Save & Close. **96 unit tests**, clippy + svelte-check clean. The on-device run (a real call → review → save) is the remaining manual check. Plan: [m4-plan.md](m4-plan.md).
+> **Status:** ✅ **Complete & merged** (PR #14) — End routes to a real Post screen that runs Sonnet structured extraction, merges live/saved commitments, and lets the user edit before Save & Close. **96 unit tests**, clippy + svelte-check clean. The on-device run (a real call → review → save) is the remaining manual check. Plan: [m4-plan.md](m4-plan.md).
 
 - [x] `ai/analyze.rs`: full transcript + context + live annotations → Sonnet (structured output, D17) → `{summary,actions,decisions,key_topics}`; cost accounted before the parse (D-cost).
 - [x] Merge/dedupe Sonnet actions with live commitments + saved actions (D19 — user-saved always kept).
@@ -124,7 +124,7 @@ M0 Spikes ─► M1 Skeleton ─► M2 Capture→Transcript ─► M3 Live AI �
 
 **Goal:** the surrounding app — browse, manage actions, configure, and handle the rough edges.
 
-> **Status:** ✅ **Complete** (branch `feat/m5-manage-polish`) — the dashboard detail pane,
+> **Status:** ✅ **Complete & merged** (PR #15) — the dashboard detail pane,
 > labels, Re-analyze, delete/discard, recover-into-review, error toasts, and confirm dialogs
 > are all live. This closes the MVP. **104 unit tests**, clippy + svelte-check clean. The
 > on-device run (real call → manage → labels → re-analyze) is the remaining manual check.
